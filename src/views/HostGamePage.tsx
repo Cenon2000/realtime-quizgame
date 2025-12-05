@@ -15,7 +15,7 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
   const [quizzes, setQuizzes] = useState<Quiz[]>([]);
   const [quizId, setQuizId] = useState<string | null>(null);
   const [lobbyName, setLobbyName] = useState("");
-  const [maxPlayers, setMaxPlayers] = useState(3);
+  const [maxPlayers, setMaxPlayers] = useState(3); // Anzahl Spieler OHNE Host
   const [hostName, setHostName] = useState("Host");
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
@@ -53,12 +53,13 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
     try {
       const joinCode = generateJoinCode();
 
+      // Lobby anlegen
       const { data: lobbyData, error: lobbyError } = await supabase
         .from("lobbies")
         .insert({
           name: lobbyName.trim(),
           quiz_id: quizId,
-          max_players: maxPlayers,
+          max_players: maxPlayers, // nur Spieler ohne Host
           join_code: joinCode,
         })
         .select()
@@ -66,6 +67,7 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
 
       if (lobbyError || !lobbyData) throw lobbyError;
 
+      // Host als Spieler-Eintrag (is_host = true)
       const { data: playerData, error: playerError } = await supabase
         .from("lobby_players")
         .insert({
@@ -73,17 +75,17 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
           name: hostName.trim(),
           is_host: true,
           score: 0,
-          turn_order: 0,
+          turn_order: -1, // Host bekommt keinen Turn-Order
         })
         .select()
         .single();
 
       if (playerError || !playerData) throw playerError;
 
-      // Game State initialisieren
+      // Game State initialisieren – noch kein Spieler am Zug
       const { error: gsError } = await supabase.from("game_states").insert({
         lobby_id: lobbyData.id,
-        current_player_id: playerData.id,
+        current_player_id: null, // erste Runde startet später, wenn Spieler dran sind
         question_status: "idle",
         active_answering_player_id: null,
         current_question_id: null,
@@ -124,23 +126,25 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
+            Anzahl Spieler (ohne Host)
+            <input
+              type="number"
+              min={1}
+              max={12}
+              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+              value={maxPlayers}
+              onChange={(e) =>
+                setMaxPlayers(Math.max(1, Number(e.target.value) || 1))
+              }
+            />
+          </label>
+
+          <label className="flex flex-col gap-1 text-sm">
             Dein Name (Host)
             <input
               className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
               value={hostName}
               onChange={(e) => setHostName(e.target.value)}
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 text-sm">
-            Maximale Spieler
-            <input
-              type="number"
-              min={2}
-              max={12}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-              value={maxPlayers}
-              onChange={(e) => setMaxPlayers(Number(e.target.value) || 2)}
             />
           </label>
         </div>

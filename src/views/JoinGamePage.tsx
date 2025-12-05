@@ -22,10 +22,12 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
       setInfo("Bitte einen Beitrittscode eingeben.");
       return;
     }
+
     setLoading(true);
     setInfo(null);
 
     try {
+      // Lobby über Join-Code finden
       const { data: lobby, error: lobbyError } = await supabase
         .from("lobbies")
         .select("*")
@@ -38,20 +40,35 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
         return;
       }
 
-      // aktuelle Spieleranzahl holen
-      const { data: players } = await supabase
+      // Spieler in dieser Lobby laden – nur echte Spieler (ohne Host)
+      const { data: players, error: playersError } = await supabase
         .from("lobby_players")
-        .select("id")
-        .eq("lobby_id", lobby.id);
+        .select("id, is_host")
+        .eq("lobby_id", lobby.id)
+        .eq("is_host", false); // Host NICHT mitzählen
 
-      if ((players?.length ?? 0) >= lobby.max_players) {
+      if (playersError) {
+        console.error(playersError);
+        setInfo("Fehler beim Laden der Spieler.");
+        setLoading(false);
+        return;
+      }
+
+      // Nur Spieler (ohne Host)
+      const realPlayers = (players ?? []).filter(
+        (p: { id: string; is_host: boolean }) => !p.is_host
+      );
+
+      if (realPlayers.length >= lobby.max_players) {
         setInfo("Diese Lobby ist bereits voll.");
         setLoading(false);
         return;
       }
 
-      const turnOrder = players?.length ?? 0;
+      // turn_order basiert nur auf Anzahl der echten Spieler
+      const turnOrder = realPlayers.length;
 
+      // Neuen Spieler eintragen
       const { data: player, error: playerError } = await supabase
         .from("lobby_players")
         .insert({

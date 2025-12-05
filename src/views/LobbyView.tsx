@@ -12,72 +12,69 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [currentLobby, setCurrentLobby] = useState<Lobby>(lobby);
 
-  useEffect(() => {
-    // Initial laden
-    supabase
+  const isHost = selfPlayer.is_host;
+
+  const fetchPlayers = async () => {
+    const { data } = await supabase
       .from("lobby_players")
       .select("*")
       .eq("lobby_id", lobby.id)
-      .order("turn_order", { ascending: true })
-      .then(({ data }) => {
-        if (data) setPlayers(data as LobbyPlayer[]);
-      });
+      .order("turn_order", { ascending: true });
 
-    // Realtime: neue Spieler
-    const subPlayers = supabase
-      .channel(`lobby_players:${lobby.id}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "lobby_players", filter: `lobby_id=eq.${lobby.id}` },
-        (payload) => {
-          setPlayers((prev) => {
-            if (payload.eventType === "INSERT") {
-              return [...prev, payload.new as LobbyPlayer].sort(
-                (a, b) => a.turn_order - b.turn_order
-              );
-            }
-            if (payload.eventType === "UPDATE") {
-              return prev
-                .map((p) => (p.id === payload.new.id ? (payload.new as LobbyPlayer) : p))
-                .sort((a, b) => a.turn_order - b.turn_order);
-            }
-            if (payload.eventType === "DELETE") {
-              return prev.filter((p) => p.id !== payload.old.id);
-            }
-            return prev;
-          });
-        }
-      )
-      .subscribe();
+    if (data) {
+      setPlayers(data as LobbyPlayer[]);
+    }
+  };
 
-    // Realtime: Lobby Status (z.B. wenn Auto-Start)
-    const subLobby = supabase
-      .channel(`lobbies:${lobby.id}`)
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "lobbies", filter: `id=eq.${lobby.id}` },
-        (payload) => {
-          const updated = payload.new as Lobby;
-          setCurrentLobby(updated);
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(subPlayers);
-      supabase.removeChannel(subLobby);
-    };
-  }, [lobby.id]);
+  const fetchLobby = async () => {
+    const { data } = await supabase
+      .from("lobbies")
+      .select("*")
+      .eq("id", lobby.id)
+      .single();
+    if (data) setCurrentLobby(data as Lobby);
+  };
 
   useEffect(() => {
-    // Auto-Start: wenn status auf "running" geht → Game
+    // direkt einmal holen
+    fetchPlayers();
+    fetchLobby();
+
+    // alle 1–2 Sekunden aktualisieren (funktioniert auch ohne Realtime)
+    const interval = setInterval(() => {
+      fetchPlayers();
+      fetchLobby();
+    }, 1500);
+
+    return () => clearInterval(interval);
+  }, [lobby.id]);
+
+  // nur "normale" Spieler zählen (ohne Host)
+  const nonHostPlayers = players.filter((p) => !p.is_host);
+  const playersJoined = nonHostPlayers.length;
+  const maxPlayers = currentLobby.max_players;
+
+  // wenn alle Spieler drin sind → Spiel automatisch starten (nur Host macht das)
+  useEffect(() => {
+    if (!isHost) return;
+    if (currentLobby.status !== "waiting") return;
+
+    if (playersJoined === maxPlayers && maxPlayers > 0) {
+      supabase
+        .from("lobbies")
+        .update({ status: "running" })
+        .eq("id", currentLobby.id);
+    }
+  }, [isHost, playersJoined, maxPlayers, currentLobby]);
+
+  // wenn Lobby-Status auf running geht → in Game wechseln
+  useEffect(() => {
     if (currentLobby.status === "running") {
       onGameStart(currentLobby, selfPlayer);
     }
   }, [currentLobby.status, onGameStart, selfPlayer]);
 
-  const isHost = selfPlayer.is_host;
-
+  // optional: manueller Start-Button für Host (falls du das behalten willst)
   const handleStart = async () => {
     if (!isHost) return;
     await supabase
@@ -86,14 +83,12 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
       .eq("id", lobby.id);
   };
 
-  const playersJoined = players.length;
-  const maxPlayers = currentLobby.max_players;
-
   return (
     <div className="flex flex-col gap-4 items-center">
       <h2 className="text-2xl font-semibold text-center">
         Lobby: {currentLobby.name}
       </h2>
+
       <p className="text-sm text-slate-300">
         Beitrittscode:{" "}
         <span className="font-mono tracking-[0.25em] bg-slate-900 px-3 py-1 rounded-lg">
@@ -101,10 +96,12 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
         </span>
       </p>
 
+      {/* WICHTIG: hier jetzt NUR Spieler ohne Host */}
       <p className="text-sm text-slate-300">
         Spieler: {playersJoined} / {maxPlayers}
       </p>
 
+      {/* Liste zeigt alle – Host und Spieler */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full md:w-3/4">
         {players.map((p) => (
           <div
@@ -122,12 +119,12 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
       {isHost && (
         <button
           onClick={handleStart}
-          disabled={playersJoined < 2 || playersJoined < maxPlayers}
+          disabled={playersJoined !== maxPlayers || maxPlayers === 0}
           className="mt-4 px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 font-semibold"
         >
-          {playersJoined < maxPlayers
-            ? "Warten auf weitere Spieler..."
-            : "Spiel starten"}
+          {playersJoined === maxPlayers && maxPlayers > 0
+            ? "Spiel starten"
+            : "Warte auf Spieler..."}
         </button>
       )}
 
