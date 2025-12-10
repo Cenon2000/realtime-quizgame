@@ -51,6 +51,13 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
     setInfo(null);
 
     try {
+      // 🔐 aktuell eingeloggten User holen (kann auch null sein, wenn nicht eingeloggt)
+      const { data: authData, error: authError } = await supabase.auth.getUser();
+      if (authError) {
+        console.warn("Konnte aktuellen User nicht ermitteln:", authError.message);
+      }
+      const authUserId = authData.user?.id ?? null;
+
       const joinCode = generateJoinCode();
 
       // Lobby anlegen
@@ -67,24 +74,19 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
 
       if (lobbyError || !lobbyData) throw lobbyError;
 
-      // Host als Spieler-Eintrag (is_host = true)
-      const {
-  data: { user },
-} = await supabase.auth.getUser();
-
-const { data: playerData, error: playerError } = await supabase
-  .from("lobby_players")
-  .insert({
-    lobby_id: lobbyData.id,
-    name: hostName.trim(),
-    is_host: true,
-    score: 0,
-    turn_order: 0,
-    user_id: user?.id ?? null, // NEU
-  })
-  .select()
-  .single();
-
+      // Host als Spieler-Eintrag (is_host = true) + user_id für Statistiken
+      const { data: playerData, error: playerError } = await supabase
+        .from("lobby_players")
+        .insert({
+          lobby_id: lobbyData.id,
+          name: hostName.trim(),
+          is_host: true,
+          score: 0,
+          turn_order: 0,
+          user_id: authUserId, // 🔥 wichtig für answer_logs / game_results
+        })
+        .select()
+        .single();
 
       if (playerError || !playerData) throw playerError;
 
