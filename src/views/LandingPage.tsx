@@ -15,8 +15,7 @@ export default function LandingPage({
         Realtime Quiz Game
       </h1>
       <p className="text-slate-300 text-center max-w-xl">
-        Erstelle dein eigenes Quiz, hoste ein Spiel für Freunde oder tritt mit
-        einem Beitrittscode einer Lobby bei. Alles läuft in Echtzeit.
+        {/* Text */} 
       </p>
       <div className="flex flex-col md:flex-row gap-4 w-full justify-center">
         <button 
