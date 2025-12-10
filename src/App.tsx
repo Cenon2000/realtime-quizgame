@@ -340,11 +340,14 @@ function App() {
       {/* Haupt-Container */}
       <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
         {/* Titel */}
-        <div className="flex items-center justify-center mb-4">
-          <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300">
-            Aaron's
-          </div>
-        </div>
+        {view.name !== "game" && (
+  <div className="flex items-center justify-center mb-4">
+    <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300">
+      Realtime Quizgame
+    </div>
+  </div>
+)}
+
 
         {/* Haupt-Views */}
         {view.name === "landing" && (
@@ -388,6 +391,7 @@ function App() {
       </div>
 
       {/* Profil-Button (innen, oben rechts) */}
+    {view.name !== "game" && (
       <div className="absolute top-3 right-4 z-40">
         <div className="relative">
           <button
@@ -461,6 +465,7 @@ function App() {
           )}
         </div>
       </div>
+    )}
 
       {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
