@@ -364,81 +364,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-900 flex relative">
-      {/* Profil-Button oben rechts (immer sichtbar) */}
-      <div className="fixed top-3 right-3 z-40">
-        <div className="relative">
-          <button
-            onClick={() => setProfileOpen((v) => !v)}
-            className="
-              w-10 h-10 rounded-full
-              bg-slate-800 border border-slate-600
-              flex items-center justify-center
-              text-sm font-semibold text-slate-100
-              hover:bg-slate-700
-            "
-          >
-            {profileInitial}
-          </button>
-
-          {profileOpen && (
-            <div
-              className="
-                absolute right-0 mt-2
-                w-40 bg-slate-900 border border-slate-700
-                rounded-xl shadow-lg p-2
-                flex flex-col gap-1 text-xs
-              "
-            >
-              {!authUser ? (
-                <>
-                  <button
-                    onClick={() => {
-                      setAuthModalMode("login");
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Login
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAuthModalMode("register");
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Create Account
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setShowStats(true);
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Statistiken
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                      setShowStats(false);
-                      setAuthModalMode(null);
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
-                  >
-                    Logout
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Haupt-Container */}
       <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
         {/* Titel */}
@@ -488,6 +413,80 @@ function App() {
           <GameBoardView lobby={view.lobby} selfPlayer={view.selfPlayer} />
         )}
       </div>
+
+      {/* Profil-Button innerhalb des hellgrauen Containers */}
+<div className="absolute top-3 right-4 z-40">
+  <div className="relative">
+    <button
+      onClick={() => setProfileOpen((v) => !v)}
+      className="
+        w-10 h-10 rounded-full
+        bg-slate-800 border border-slate-600
+        flex items-center justify-center
+        text-sm font-semibold text-slate-100
+        hover:bg-slate-700
+      "
+    >
+      {profileInitial}
+    </button>
+
+    {profileOpen && (
+      <div className="
+        absolute right-0 mt-2
+        w-40 bg-slate-900 border border-slate-700
+        rounded-xl shadow-lg p-2
+        flex flex-col gap-1 text-xs
+      ">
+        {!authUser ? (
+          <>
+            <button
+              onClick={() => {
+                setAuthModalMode("login");
+                setProfileOpen(false);
+              }}
+              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+            >
+              Login
+            </button>
+            <button
+              onClick={() => {
+                setAuthModalMode("register");
+                setProfileOpen(false);
+              }}
+              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+            >
+              Create Account
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => {
+                setShowStats(true);
+                setProfileOpen(false);
+              }}
+              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+            >
+              Statistiken
+            </button>
+            <button
+              onClick={async () => {
+                await supabase.auth.signOut();
+                setShowStats(false);
+                setAuthModalMode(null);
+                setProfileOpen(false);
+              }}
+              className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
+            >
+              Logout
+            </button>
+          </>
+        )}
+      </div>
+    )}
+  </div>
+</div>
+
 
       {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
