@@ -191,59 +191,79 @@ function StatsModal({
   } | null>(null);
 
   useEffect(() => {
-    const fetchStats = async () => {
+    const loadStats = async () => {
       setLoading(true);
       setError(null);
-      try {
-        // Antwort-Logs holen
-        const { data: logs, error: logsErr } = await supabase
-          .from("answer_logs")
-          .select("is_correct, points_change")
-          .eq("user_id", userId);
 
-        if (logsErr) throw logsErr;
+      // 1) Rohdaten laden
+      const { data: logs, error: logsError } = await supabase
+        .from("answer_logs")
+        .select("is_correct, points_change")
+        .eq("user_id", userId);
 
-        // Spiel-Ergebnisse holen
-        const { data: games, error: gamesErr } = await supabase
-          .from("game_results")
-          .select("is_winner")
-          .eq("user_id", userId);
+      const { data: games, error: gamesError } = await supabase
+        .from("game_results")
+        .select("is_winner")
+        .eq("user_id", userId);
 
-        if (gamesErr) throw gamesErr;
-
-        let totalPoints = 0;
-        let questionsCorrect = 0;
-        let questionsWrong = 0;
-
-        for (const row of logs ?? []) {
-          const pc = (row as any).points_change ?? 0;
-          const correct = (row as any).is_correct;
-
-          totalPoints += pc;
-          if (correct) questionsCorrect++;
-          else questionsWrong++;
-        }
-
-        const gamesPlayed = games?.length ?? 0;
-        const gamesWon =
-          games?.filter((g: any) => g.is_winner === true).length ?? 0;
-
-        setStats({
-          totalPoints,
-          questionsCorrect,
-          questionsWrong,
-          gamesPlayed,
-          gamesWon,
+      if (logsError || gamesError) {
+        console.error("Fehler beim Laden der Stats:", {
+          logsError,
+          gamesError,
         });
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message ?? "Fehler beim Laden der Statistiken.");
-      } finally {
+        setError("Fehler beim Laden deiner Statistiken.");
         setLoading(false);
+        return;
       }
+
+      // 2) Werte berechnen
+      const totalPoints =
+        logs?.reduce((sum, l) => sum + (l.points_change ?? 0), 0) ?? 0;
+
+      const questionsCorrect =
+        logs?.filter((l) => l.is_correct === true).length ?? 0;
+
+      const questionsWrong =
+        logs?.filter((l) => l.is_correct === false).length ?? 0;
+
+      const gamesPlayed = games?.length ?? 0;
+      const gamesWon = games?.filter((g) => g.is_winner === true).length ?? 0;
+
+      const computed = {
+        totalPoints,
+        questionsCorrect,
+        questionsWrong,
+        gamesPlayed,
+        gamesWon,
+      };
+
+      setStats(computed);
+
+      // 3) in profiles Tabelle schreiben
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          total_points: totalPoints,
+          questions_correct: questionsCorrect,
+          questions_wrong: questionsWrong,
+          games_played: gamesPlayed,
+          games_won: gamesWon,
+        })
+        .eq("id", userId);
+
+      if (profileError) {
+        console.error(
+          "Fehler beim Aktualisieren von profiles:",
+          profileError.message
+        );
+        // hier kannst du optional auch noch ein error setzen:
+        // setError("Stats konnten nicht im Profil gespeichert werden.");
+      }
+
+      setLoading(false);
     };
 
-    fetchStats();
+    loadStats();
   }, [userId]);
 
   return (
@@ -271,28 +291,20 @@ function StatsModal({
         {!loading && !error && stats && (
           <div className="grid grid-cols-2 gap-3 text-sm">
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
-              <span className="text-[11px] text-slate-400">
-                Gesamtpunkte
-              </span>
-              <span className="text-lg font-mono">
-                {stats.totalPoints}
-              </span>
+              <span className="text-[11px] text-slate-400">Gesamtpunkte</span>
+              <span className="text-lg font-mono">{stats.totalPoints}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
               <span className="text-[11px] text-slate-400">
                 Runden gespielt
               </span>
-              <span className="text-lg font-mono">
-                {stats.gamesPlayed}
-              </span>
+              <span className="text-lg font-mono">{stats.gamesPlayed}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
               <span className="text-[11px] text-slate-400">
                 Runden gewonnen
               </span>
-              <span className="text-lg font-mono">
-                {stats.gamesWon}
-              </span>
+              <span className="text-lg font-mono">{stats.gamesWon}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
               <span className="text-[11px] text-slate-400">
@@ -316,6 +328,7 @@ function StatsModal({
     </div>
   );
 }
+
 
 /* ===========================
    APP
