@@ -68,17 +68,23 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
       if (lobbyError || !lobbyData) throw lobbyError;
 
       // Host als Spieler-Eintrag (is_host = true)
-      const { data: playerData, error: playerError } = await supabase
-        .from("lobby_players")
-        .insert({
-          lobby_id: lobbyData.id,
-          name: hostName.trim(),
-          is_host: true,
-          score: 0,
-          turn_order: -1, // Host bekommt keinen Turn-Order
-        })
-        .select()
-        .single();
+      const {
+  data: { user },
+} = await supabase.auth.getUser();
+
+const { data: playerData, error: playerError } = await supabase
+  .from("lobby_players")
+  .insert({
+    lobby_id: lobbyData.id,
+    name: hostName.trim(),
+    is_host: true,
+    score: 0,
+    turn_order: 0,
+    user_id: user?.id ?? null, // NEU
+  })
+  .select()
+  .single();
+
 
       if (playerError || !playerData) throw playerError;
 

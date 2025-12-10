@@ -34,6 +34,7 @@ export type LobbyPlayer = {
   is_host: boolean;
   score: number;
   turn_order: number;
+  user_id: string | null;
 };
 
 export type GameState = {

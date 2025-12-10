@@ -40,6 +40,11 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
         return;
       }
 
+        const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+
       // Spieler in dieser Lobby laden – nur echte Spieler (ohne Host)
       const { data: players, error: playersError } = await supabase
         .from("lobby_players")
@@ -69,16 +74,18 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
       const turnOrder = realPlayers.length;
 
       // Neuen Spieler eintragen
-      const { data: player, error: playerError } = await supabase
-        .from("lobby_players")
-        .insert({
-          lobby_id: lobby.id,
-          name: name.trim(),
-          is_host: false,
-          turn_order: turnOrder,
-        })
-        .select()
-        .single();
+        const { data: player, error: playerError } = await supabase
+    .from("lobby_players")
+    .insert({
+      lobby_id: lobby.id,
+      name: name.trim(),
+      is_host: false,
+      turn_order: turnOrder,
+      user_id: user?.id ?? null, // 🔥 hier wird der Account verlinkt
+    })
+    .select()
+    .single();
+
 
       if (playerError || !player) throw playerError;
 

@@ -427,29 +427,61 @@ if (!lobbyRow) {
   );
 
     // Alle Fragen aufgebraucht? → Game Over + Top 3 berechnen
+    // Alle Fragen aufgebraucht? → Game Over + Top 3 berechnen + game_results loggen
+    // Alle Fragen aufgebraucht? → Game Over + Top 3 berechnen + game_results loggen
   useEffect(() => {
     if (!questions.length) return;
 
-    // Set mit allen benutzten Fragen
-    const usedSet = new Set(
-      questionUsage
-        .filter((u) => u.used)
-        .map((u) => u.question_id)
-    );
+    const checkGameOver = async () => {
+      // Set mit allen benutzten Fragen
+      const usedSet = new Set(
+        questionUsage
+          .filter((u) => u.used)
+          .map((u) => u.question_id)
+      );
 
-    // Sind alle Quizfragen in diesem Set?
-    const allUsed = questions.every((q) => usedSet.has(q.id));
+      // Sind alle Quizfragen in diesem Set?
+      const allUsed = questions.every((q) => usedSet.has(q.id));
 
-    if (allUsed) {
+      if (!allUsed) {
+        setIsGameOver(false);
+        return;
+      }
+
       // Nur echte Spieler (ohne Host) für das Ranking
       const nonHost = players.filter((p) => !p.is_host);
       const sorted = [...nonHost].sort((a, b) => b.score - a.score);
-      setTopPlayers(sorted.slice(0, 3));
+      const top = sorted.slice(0, 3);
+
+      setTopPlayers(top);
       setIsGameOver(true);
-    } else {
-      setIsGameOver(false);
-    }
-  }, [questions, questionUsage, players]);
+
+      // Nur der Host schreibt game_results in die DB
+      if (isHost && sorted.length > 0) {
+        const bestScore = sorted[0]?.score ?? 0;
+
+        // Ergebnisse für alle Spieler loggen (nur registrierte)
+        const rows = sorted
+          .filter((p) => (p as any).user_id) // user_id kann in deinem Typ optional sein
+          .map((p) => ({
+            user_id: (p as any).user_id as string,
+            lobby_id: lobby.id,
+            final_score: p.score,
+            is_winner: p.score === bestScore,
+          }));
+
+        if (rows.length) {
+          const { error } = await supabase.from("game_results").insert(rows);
+          if (error) {
+            console.error("Fehler beim Schreiben von game_results:", error);
+          }
+        }
+      }
+    };
+
+    checkGameOver();
+  }, [questions, questionUsage, players, isHost, lobby.id]);
+
 
 
   // Nur Host darf Fragen auswählen
@@ -530,6 +562,23 @@ if (!lobbyRow) {
       .eq("id", playerId);
   };
 
+  const logAnswerEvent = async (
+  player: LobbyPlayer,
+  isCorrect: boolean,
+  pointsChange: number,
+  questionId: string
+) => {
+  if (!player.user_id) return; // Gäste werden nicht getrackt
+  await supabase.from("answer_logs").insert({
+    user_id: player.user_id,
+    lobby_id: lobby.id,
+    question_id: questionId,
+    is_correct: isCorrect,
+    points_change: pointsChange,
+  });
+};
+
+
   const markQuestionUsed = async (questionId: string) => {
     const existing = questionUsage.find((u) => u.question_id === questionId);
     if (existing) {
@@ -600,6 +649,8 @@ if (!lobbyRow) {
     await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
     setBuzzers([]);
     await goToNextPlayer();
+await logAnswerEvent(targetPlayer, true, points, currentQuestion.id); // NEU
+
   };
 
   const handleHostWrong = async () => {
@@ -610,6 +661,7 @@ if (!lobbyRow) {
     if (!targetPlayer) return;
 
     await changeScore(targetPlayer.id, -half);
+    await logAnswerEvent(targetPlayer, false, -half, currentQuestion.id);
 
     if (gameState.question_status === "answering") {
       const { error } = await supabase
