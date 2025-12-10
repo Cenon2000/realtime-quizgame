@@ -93,7 +93,7 @@ function AuthBox({
           {mode === "register" ? "Account erstellen" : "Anmelden"}
         </h2>
 
-        {/* Modus wählen (falls man im Modal noch umschalten will) */}
+        {/* Modus wählen */}
         <div className="flex justify-center gap-2 text-xs mb-1">
           <button
             className={`px-3 py-1 rounded-full ${
@@ -170,7 +170,7 @@ function AuthBox({
 }
 
 /* ===========================
-   STATISTIK-MODAL
+   STATISTIK-MODAL – liest NUR aus profiles
    =========================== */
 
 function StatsModal({
@@ -195,70 +195,29 @@ function StatsModal({
       setLoading(true);
       setError(null);
 
-      // 1) Rohdaten laden
-      const { data: logs, error: logsError } = await supabase
-        .from("answer_logs")
-        .select("is_correct, points_change")
-        .eq("user_id", userId);
+      // 🔍 Stats direkt aus der profiles-Tabelle lesen
+      const { data, error: profileError } = await supabase
+        .from("profiles")
+        .select(
+          "total_points, questions_correct, questions_wrong, games_played, games_won"
+        )
+        .eq("id", userId)
+        .single();
 
-      const { data: games, error: gamesError } = await supabase
-        .from("game_results")
-        .select("is_winner")
-        .eq("user_id", userId);
-
-      if (logsError || gamesError) {
-        console.error("Fehler beim Laden der Stats:", {
-          logsError,
-          gamesError,
-        });
+      if (profileError) {
+        console.error("Fehler beim Laden aus profiles:", profileError.message);
         setError("Fehler beim Laden deiner Statistiken.");
         setLoading(false);
         return;
       }
 
-      // 2) Werte berechnen
-      const totalPoints =
-        logs?.reduce((sum, l) => sum + (l.points_change ?? 0), 0) ?? 0;
-
-      const questionsCorrect =
-        logs?.filter((l) => l.is_correct === true).length ?? 0;
-
-      const questionsWrong =
-        logs?.filter((l) => l.is_correct === false).length ?? 0;
-
-      const gamesPlayed = games?.length ?? 0;
-      const gamesWon = games?.filter((g) => g.is_winner === true).length ?? 0;
-
-      const computed = {
-        totalPoints,
-        questionsCorrect,
-        questionsWrong,
-        gamesPlayed,
-        gamesWon,
-      };
-
-      setStats(computed);
-
-      // 3) in profiles Tabelle schreiben
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .update({
-          total_points: totalPoints,
-          questions_correct: questionsCorrect,
-          questions_wrong: questionsWrong,
-          games_played: gamesPlayed,
-          games_won: gamesWon,
-        })
-        .eq("id", userId);
-
-      if (profileError) {
-        console.error(
-          "Fehler beim Aktualisieren von profiles:",
-          profileError.message
-        );
-        // hier kannst du optional auch noch ein error setzen:
-        // setError("Stats konnten nicht im Profil gespeichert werden.");
-      }
+      setStats({
+        totalPoints: data?.total_points ?? 0,
+        questionsCorrect: data?.questions_correct ?? 0,
+        questionsWrong: data?.questions_wrong ?? 0,
+        gamesPlayed: data?.games_played ?? 0,
+        gamesWon: data?.games_won ?? 0,
+      });
 
       setLoading(false);
     };
@@ -329,7 +288,6 @@ function StatsModal({
   );
 }
 
-
 /* ===========================
    APP
    =========================== */
@@ -338,7 +296,9 @@ function App() {
   const [view, setView] = useState<View>({ name: "landing" });
 
   // Auth-Status
-  const [authUser, setAuthUser] = useState<null | { id: string; email?: string | null }>(null);
+  const [authUser, setAuthUser] = useState<
+    null | { id: string; email?: string | null }
+  >(null);
   const [authLoading, setAuthLoading] = useState(true);
 
   // Profil-Menü + Modals
@@ -427,79 +387,80 @@ function App() {
         )}
       </div>
 
-      {/* Profil-Button innerhalb des hellgrauen Containers */}
-<div className="absolute top-3 right-4 z-40">
-  <div className="relative">
-    <button
-      onClick={() => setProfileOpen((v) => !v)}
-      className="
-        w-10 h-10 rounded-full
-        bg-slate-800 border border-slate-600
-        flex items-center justify-center
-        text-sm font-semibold text-slate-100
-        hover:bg-slate-700
-      "
-    >
-      {profileInitial}
-    </button>
+      {/* Profil-Button (innen, oben rechts) */}
+      <div className="absolute top-3 right-4 z-40">
+        <div className="relative">
+          <button
+            onClick={() => setProfileOpen((v) => !v)}
+            className="
+              w-10 h-10 rounded-full
+              bg-slate-800 border border-slate-600
+              flex items-center justify-center
+              text-sm font-semibold text-slate-100
+              hover:bg-slate-700
+            "
+          >
+            {profileInitial}
+          </button>
 
-    {profileOpen && (
-      <div className="
-        absolute right-0 mt-2
-        w-40 bg-slate-900 border border-slate-700
-        rounded-xl shadow-lg p-2
-        flex flex-col gap-1 text-xs
-      ">
-        {!authUser ? (
-          <>
-            <button
-              onClick={() => {
-                setAuthModalMode("login");
-                setProfileOpen(false);
-              }}
-              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+          {profileOpen && (
+            <div
+              className="
+                absolute right-0 mt-2
+                w-40 bg-slate-900 border border-slate-700
+                rounded-xl shadow-lg p-2
+                flex flex-col gap-1 text-xs
+              "
             >
-              Login
-            </button>
-            <button
-              onClick={() => {
-                setAuthModalMode("register");
-                setProfileOpen(false);
-              }}
-              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-            >
-              Create Account
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => {
-                setShowStats(true);
-                setProfileOpen(false);
-              }}
-              className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-            >
-              Statistiken
-            </button>
-            <button
-              onClick={async () => {
-                await supabase.auth.signOut();
-                setShowStats(false);
-                setAuthModalMode(null);
-                setProfileOpen(false);
-              }}
-              className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
-            >
-              Logout
-            </button>
-          </>
-        )}
+              {!authUser ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode("login");
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode("register");
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Create Account
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowStats(true);
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Statistiken
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      setShowStats(false);
+                      setAuthModalMode(null);
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
+                  >
+                    Logout
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       </div>
-    )}
-  </div>
-</div>
-
 
       {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
@@ -511,10 +472,7 @@ function App() {
 
       {/* STATISTIK-MODAL */}
       {showStats && authUser && (
-        <StatsModal
-          userId={authUser.id}
-          onClose={() => setShowStats(false)}
-        />
+        <StatsModal userId={authUser.id} onClose={() => setShowStats(false)} />
       )}
     </div>
   );
