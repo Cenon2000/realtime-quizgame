@@ -12,7 +12,7 @@ export default function LandingPage({
   return (
     <div className="flex flex-col gap-8 items-center">
       <h1 className="text-3xl md:text-4xl font-bold text-center">
-        Realtime Quiz Game
+        Quiz Abend
       </h1>
       <p className="text-slate-300 text-center max-w-xl">
         {/* Text */} 
