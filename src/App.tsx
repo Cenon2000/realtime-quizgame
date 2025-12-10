@@ -343,7 +343,7 @@ function App() {
         {view.name !== "game" && (
   <div className="flex items-center justify-center mb-4">
     <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300">
-      Realtime Quizgame
+      Aaron's
     </div>
   </div>
 )}
