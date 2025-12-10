@@ -16,13 +16,18 @@ type View =
   | { name: "lobby"; lobby: Lobby; selfPlayer: LobbyPlayer }
   | { name: "game"; lobby: Lobby; selfPlayer: LobbyPlayer };
 
-// Auth als MODAL über allem mit Blur-Hintergrund
+/* ===========================
+   AUTH-MODAL (Login + Register)
+   =========================== */
+
 function AuthBox({
   onDone,
+  initialMode = "login",
 }: {
   onDone?: () => void;
+  initialMode?: "login" | "register";
 }) {
-  const [mode, setMode] = useState<"login" | "register">("register");
+  const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
@@ -46,7 +51,7 @@ function AuthBox({
         });
         if (error) throw error;
 
-        // Profil anlegen (falls du die Tabelle "profiles" wie besprochen erstellt hast)
+        // Profil anlegen (falls "profiles"-Tabelle existiert)
         if (data.user) {
           await supabase.from("profiles").insert({
             id: data.user.id,
@@ -73,11 +78,10 @@ function AuthBox({
   };
 
   return (
-    // OVERLAY über der kompletten App
+    // Overlay über der ganzen App
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      {/* Modal-Box */}
       <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-sm p-5 space-y-3 shadow-2xl">
-        {/* Schließen-Button oben rechts */}
+        {/* schließen */}
         <button
           onClick={onDone}
           className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
@@ -89,7 +93,7 @@ function AuthBox({
           {mode === "register" ? "Account erstellen" : "Anmelden"}
         </h2>
 
-        {/* Modus-Toggle */}
+        {/* Modus wählen (falls man im Modal noch umschalten will) */}
         <div className="flex justify-center gap-2 text-xs mb-1">
           <button
             className={`px-3 py-1 rounded-full ${
@@ -165,15 +169,171 @@ function AuthBox({
   );
 }
 
+/* ===========================
+   STATISTIK-MODAL
+   =========================== */
+
+function StatsModal({
+  userId,
+  onClose,
+}: {
+  userId: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<{
+    totalPoints: number;
+    questionsCorrect: number;
+    questionsWrong: number;
+    gamesPlayed: number;
+    gamesWon: number;
+  } | null>(null);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        // Antwort-Logs holen
+        const { data: logs, error: logsErr } = await supabase
+          .from("answer_logs")
+          .select("is_correct, points_change")
+          .eq("user_id", userId);
+
+        if (logsErr) throw logsErr;
+
+        // Spiel-Ergebnisse holen
+        const { data: games, error: gamesErr } = await supabase
+          .from("game_results")
+          .select("is_winner")
+          .eq("user_id", userId);
+
+        if (gamesErr) throw gamesErr;
+
+        let totalPoints = 0;
+        let questionsCorrect = 0;
+        let questionsWrong = 0;
+
+        for (const row of logs ?? []) {
+          const pc = (row as any).points_change ?? 0;
+          const correct = (row as any).is_correct;
+
+          totalPoints += pc;
+          if (correct) questionsCorrect++;
+          else questionsWrong++;
+        }
+
+        const gamesPlayed = games?.length ?? 0;
+        const gamesWon =
+          games?.filter((g: any) => g.is_winner === true).length ?? 0;
+
+        setStats({
+          totalPoints,
+          questionsCorrect,
+          questionsWrong,
+          gamesPlayed,
+          gamesWon,
+        });
+      } catch (err: any) {
+        console.error(err);
+        setError(err.message ?? "Fehler beim Laden der Statistiken.");
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStats();
+  }, [userId]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-md p-6 space-y-4 shadow-2xl">
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
+        >
+          ✕
+        </button>
+
+        <h2 className="text-xl font-semibold text-center mb-2">
+          Deine Statistiken
+        </h2>
+
+        {loading && (
+          <p className="text-xs text-slate-300 text-center">Lade...</p>
+        )}
+
+        {error && (
+          <p className="text-xs text-rose-300 text-center">{error}</p>
+        )}
+
+        {!loading && !error && stats && (
+          <div className="grid grid-cols-2 gap-3 text-sm">
+            <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
+              <span className="text-[11px] text-slate-400">
+                Gesamtpunkte
+              </span>
+              <span className="text-lg font-mono">
+                {stats.totalPoints}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
+              <span className="text-[11px] text-slate-400">
+                Runden gespielt
+              </span>
+              <span className="text-lg font-mono">
+                {stats.gamesPlayed}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
+              <span className="text-[11px] text-slate-400">
+                Runden gewonnen
+              </span>
+              <span className="text-lg font-mono">
+                {stats.gamesWon}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
+              <span className="text-[11px] text-slate-400">
+                Antworten richtig
+              </span>
+              <span className="text-lg font-mono">
+                {stats.questionsCorrect}
+              </span>
+            </div>
+            <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
+              <span className="text-[11px] text-slate-400">
+                Antworten falsch
+              </span>
+              <span className="text-lg font-mono">
+                {stats.questionsWrong}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   APP
+   =========================== */
+
 function App() {
   const [view, setView] = useState<View>({ name: "landing" });
 
-  // 🔐 Auth-Status (Supabase)
+  // Auth-Status
   const [authUser, setAuthUser] = useState<null | { id: string; email?: string | null }>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [showAuthBox, setShowAuthBox] = useState(false);
 
-  // Supabase-User einmal beim Start holen + bei Änderungen updaten
+  // Profil-Menü + Modals
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(null);
+  const [showStats, setShowStats] = useState(false);
+
+  // Supabase-User laden
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
@@ -199,42 +359,92 @@ function App() {
     );
   }
 
+  // Anfangsbuchstabe für Profil-Button
+  const profileInitial = authUser?.email?.[0]?.toUpperCase() ?? "P";
+
   return (
-    <div className="min-h-screen bg-slate-900 flex">
-      <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8 relative">
-        {/* Obere Leiste: Titel + Auth-Info */}
-        <div className="flex items-center justify-between mb-4 text-xs text-slate-200">
+    <div className="min-h-screen bg-slate-900 flex relative">
+      {/* Profil-Button oben rechts (immer sichtbar) */}
+      <div className="fixed top-3 right-3 z-40">
+        <div className="relative">
+          <button
+            onClick={() => setProfileOpen((v) => !v)}
+            className="
+              w-10 h-10 rounded-full
+              bg-slate-800 border border-slate-600
+              flex items-center justify-center
+              text-sm font-semibold text-slate-100
+              hover:bg-slate-700
+            "
+          >
+            {profileInitial}
+          </button>
+
+          {profileOpen && (
+            <div
+              className="
+                absolute right-0 mt-2
+                w-40 bg-slate-900 border border-slate-700
+                rounded-xl shadow-lg p-2
+                flex flex-col gap-1 text-xs
+              "
+            >
+              {!authUser ? (
+                <>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode("login");
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Login
+                  </button>
+                  <button
+                    onClick={() => {
+                      setAuthModalMode("register");
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Create Account
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => {
+                      setShowStats(true);
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                  >
+                    Statistiken
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await supabase.auth.signOut();
+                      setShowStats(false);
+                      setAuthModalMode(null);
+                      setProfileOpen(false);
+                    }}
+                    className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
+                  >
+                    Logout
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Haupt-Container */}
+      <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
+        {/* Titel */}
+        <div className="flex items-center justify-center mb-4">
           <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300">
             Realtime Quizgame
-          </div>
-
-          <div className="flex items-center gap-2">
-            {authUser ? (
-              <>
-                <span className="hidden sm:inline text-slate-300">
-                  Eingeloggt als{" "}
-                  <span className="font-semibold">
-                    {authUser.email ?? "User"}
-                  </span>
-                </span>
-                <button
-                  onClick={async () => {
-                    await supabase.auth.signOut();
-                    setShowAuthBox(false);
-                  }}
-                  className="px-2 py-1 rounded-lg bg-slate-700 hover:bg-slate-600 text-[11px]"
-                >
-                  Logout
-                </button>
-              </>
-            ) : (
-              <button
-                onClick={() => setShowAuthBox(true)}
-                className="px-3 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-[11px] font-semibold"
-              >
-                Login / Registrieren
-              </button>
-            )}
           </div>
         </div>
 
@@ -277,12 +487,23 @@ function App() {
         {view.name === "game" && (
           <GameBoardView lobby={view.lobby} selfPlayer={view.selfPlayer} />
         )}
-
-        {/* AUTH-MODAL */}
-        {!authUser && showAuthBox && (
-          <AuthBox onDone={() => setShowAuthBox(false)} />
-        )}
       </div>
+
+      {/* AUTH-MODAL */}
+      {authModalMode && !authUser && (
+        <AuthBox
+          initialMode={authModalMode}
+          onDone={() => setAuthModalMode(null)}
+        />
+      )}
+
+      {/* STATISTIK-MODAL */}
+      {showStats && authUser && (
+        <StatsModal
+          userId={authUser.id}
+          onClose={() => setShowStats(false)}
+        />
+      )}
     </div>
   );
 }
