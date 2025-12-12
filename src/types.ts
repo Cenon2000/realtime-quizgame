@@ -8,6 +8,7 @@ export type QuizCategory = {
   quiz_id: string;
   name: string;
   position: number;
+  board: number; // 1 oder 2
 };
 
 export type QuizQuestion = {
@@ -18,6 +19,7 @@ export type QuizQuestion = {
   answer: string;
   question_type?: "text" | "image";
   image_path?: string | null;
+  board: number; // 1 oder 2
 };
 
 export type Lobby = {
@@ -45,4 +47,5 @@ export type GameState = {
   current_question_id: string | null;
   question_status: "idle" | "answering" | "buzzing" | "resolved";
   active_answering_player_id: string | null;
+  current_board: number; // 1 oder 2
 };
