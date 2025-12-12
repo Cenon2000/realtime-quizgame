@@ -16,6 +16,8 @@ export type QuizQuestion = {
   points: number;
   question: string;
   answer: string;
+  question_type?: "text" | "image";
+  image_path?: string | null;
 };
 
 export type Lobby = {

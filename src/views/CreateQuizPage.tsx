@@ -1,6 +1,19 @@
 import { useState } from "react";
 import { supabase } from "../supabaseClient";
 
+async function uploadQuestionImage(file: File, quizId: string) {
+  const ext = file.name.split(".").pop() || "png";
+  const fileName = `${crypto.randomUUID()}.${ext}`;
+  const path = `quiz_${quizId}/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from("question-images")
+    .upload(path, file, { upsert: false });
+
+  if (error) throw error;
+  return path; // <-- speichern wir in image_path
+}
+
 const DEFAULT_POINTS = [100, 200, 300, 500];
 
 type Props = {
@@ -11,8 +24,11 @@ type CategoryForm = {
   name: string;
   questions: {
     points: number;
-    question: string;
+    question: string; // optional bei Bildfragen (z.B. "Welches Land?")
     answer: string;
+    question_type: "text" | "image";
+    imageFile?: File | null;
+    imagePreview?: string | null;
   }[];
 };
 
@@ -26,9 +42,13 @@ export default function CreateQuizPage({ onBack }: Props) {
         points: p,
         question: "",
         answer: "",
+        question_type: "text",
+        imageFile: null,
+        imagePreview: null,
       })),
     }))
   );
+
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
 
@@ -60,13 +80,63 @@ export default function CreateQuizPage({ onBack }: Props) {
     });
   };
 
+  const handleQuestionTypeChange = (
+    catIndex: number,
+    qIndex: number,
+    value: "text" | "image"
+  ) => {
+    setCategories((prev) => {
+      const copy = [...prev];
+      const cat = copy[catIndex];
+      const qs = [...cat.questions];
+
+      // Wenn man von image -> text wechselt: Bild zurücksetzen
+      qs[qIndex] = {
+        ...qs[qIndex],
+        question_type: value,
+        ...(value === "text"
+          ? { imageFile: null, imagePreview: null }
+          : {}),
+      };
+
+      copy[catIndex] = { ...cat, questions: qs };
+      return copy;
+    });
+  };
+
+  const handleImageChange = (
+    catIndex: number,
+    qIndex: number,
+    file: File | null
+  ) => {
+    setCategories((prev) => {
+      const copy = [...prev];
+      const cat = copy[catIndex];
+      const qs = [...cat.questions];
+
+      const preview = file ? URL.createObjectURL(file) : null;
+
+      qs[qIndex] = {
+        ...qs[qIndex],
+        imageFile: file,
+        imagePreview: preview,
+        question_type: "image",
+      };
+
+      copy[catIndex] = { ...cat, questions: qs };
+      return copy;
+    });
+  };
+
   const handleSubmit = async () => {
     if (!quizName.trim()) {
       setInfo("Bitte einen Quiznamen eingeben.");
       return;
     }
+
     setLoading(true);
     setInfo(null);
+
     try {
       // Quiz anlegen
       const { data: quizData, error: quizError } = await supabase
@@ -80,6 +150,7 @@ export default function CreateQuizPage({ onBack }: Props) {
       // Kategorien + Fragen
       for (let i = 0; i < categoryCount; i++) {
         const catForm = categories[i];
+
         const { data: catData, error: catError } = await supabase
           .from("quiz_categories")
           .insert({
@@ -89,26 +160,50 @@ export default function CreateQuizPage({ onBack }: Props) {
           })
           .select()
           .single();
+
         if (catError || !catData) throw catError;
 
-        const questionsPayload = catForm.questions.map((q) => ({
-          category_id: catData.id,
-          points: q.points,
-          question: q.question.trim() || `Frage für ${q.points} Punkte`,
-          answer: q.answer.trim() || "Antwort",
-        }));
+        // Fragen bauen (mit optionalem Upload)
+        const questionsPayload: any[] = [];
+
+        for (const q of catForm.questions) {
+          let imagePath: string | null = null;
+
+          if (q.question_type === "image") {
+            if (!q.imageFile) {
+              throw new Error(
+                `In "${catForm.name}" bei ${q.points} Punkten fehlt ein Bild.`
+              );
+            }
+            imagePath = await uploadQuestionImage(q.imageFile, quizData.id);
+          }
+
+          questionsPayload.push({
+            category_id: catData.id,
+            points: q.points,
+            question:
+              q.question.trim() ||
+              (q.question_type === "image"
+                ? "" // Bildfrage darf leer sein
+                : `Frage für ${q.points} Punkte`),
+            answer: q.answer.trim() || "Antwort",
+            question_type: q.question_type,
+            image_path: imagePath,
+          });
+        }
 
         const { error: qError } = await supabase
           .from("quiz_questions")
           .insert(questionsPayload);
+
         if (qError) throw qError;
       }
 
       setInfo("Quiz erfolgreich gespeichert!");
       setQuizName("");
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setInfo("Fehler beim Speichern des Quiz.");
+      setInfo(err?.message ?? "Fehler beim Speichern des Quiz.");
     } finally {
       setLoading(false);
     }
@@ -176,18 +271,43 @@ export default function CreateQuizPage({ onBack }: Props) {
                   handleCategoryChange(catIndex, "name", e.target.value)
                 }
               />
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 {cat.questions.map((q, qIndex) => (
                   <div
                     key={q.points}
                     className="bg-slate-800 rounded-lg p-2 space-y-2"
                   >
-                    <div className="text-xs font-semibold text-indigo-300">
-                      {q.points} Punkte
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold text-indigo-300">
+                        {q.points} Punkte
+                      </div>
+
+                      {/* Text/Bild Umschalter */}
+                      <select
+                        className="px-2 py-1 rounded bg-slate-900 border border-slate-700 text-xs"
+                        value={q.question_type}
+                        onChange={(e) =>
+                          handleQuestionTypeChange(
+                            catIndex,
+                            qIndex,
+                            e.target.value as "text" | "image"
+                          )
+                        }
+                      >
+                        <option value="text">Text</option>
+                        <option value="image">Bild</option>
+                      </select>
                     </div>
+
+                    {/* Frage-Text (optional bei Bildfragen) */}
                     <textarea
                       className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm"
-                      placeholder="Frage"
+                      placeholder={
+                        q.question_type === "image"
+                          ? "Optionaler Text (z.B. Welches Land?)"
+                          : "Frage"
+                      }
                       value={q.question}
                       onChange={(e) =>
                         handleQuestionChange(
@@ -198,6 +318,37 @@ export default function CreateQuizPage({ onBack }: Props) {
                         )
                       }
                     />
+
+                    {/* Bild Upload nur wenn question_type=image */}
+                    {q.question_type === "image" && (
+                      <div className="space-y-2">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="text-xs"
+                          onChange={(e) =>
+                            handleImageChange(
+                              catIndex,
+                              qIndex,
+                              e.target.files?.[0] ?? null
+                            )
+                          }
+                        />
+
+                        {q.imagePreview && (
+                          <div className="w-full rounded-lg overflow-hidden border border-slate-700 bg-black/20">
+                            <div className="aspect-[3/2] w-full">
+                              <img
+                                src={q.imagePreview}
+                                alt="Vorschau"
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <input
                       className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm"
                       placeholder="Antwort"

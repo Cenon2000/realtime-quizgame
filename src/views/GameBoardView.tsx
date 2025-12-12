@@ -123,6 +123,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
   const isHost = selfPlayer.is_host;
 
+  const getQuestionImageUrl = (imagePath?: string | null) => {
+  if (!imagePath) return null;
+
+  const { data } = supabase.storage
+    .from("question-images")
+    .getPublicUrl(imagePath);
+
+  return data.publicUrl;
+};
+
+
   // 1) Quiz, Kategorien, Fragen (statisch)
   useEffect(() => {
     const loadStaticData = async () => {
@@ -1121,9 +1132,32 @@ await logAnswerEvent(targetPlayer, true, points, currentQuestion.id); // NEU
               {currentPlayer ? `Am Zug: ${currentPlayer.name}` : ""}
             </div>
 
-            <div className="text-lg md:text-2xl font-semibold text-center">
-              {currentQuestion.question}
-            </div>
+            {(currentQuestion as any).question_type === "image" ? (
+  <div className="space-y-3">
+    {/* optionaler Fragetext */}
+    {currentQuestion.question?.trim() && (
+      <div className="text-lg md:text-2xl font-semibold text-center">
+        {currentQuestion.question}
+      </div>
+    )}
+
+    {/* Bildbereich: immer gleiche Größe */}
+    <div className="w-full max-w-xl mx-auto rounded-xl overflow-hidden border border-slate-700 bg-black/20">
+      <div className="aspect-[3/2] w-full">
+        <img
+          src={getQuestionImageUrl((currentQuestion as any).image_path) ?? ""}
+          alt="Fragebild"
+          className="w-full h-full object-contain"
+        />
+      </div>
+    </div>
+  </div>
+) : (
+  <div className="text-lg md:text-2xl font-semibold text-center">
+    {currentQuestion.question}
+  </div>
+)}
+
 
             {/* Host-Sicht */}
             {isHost && (
