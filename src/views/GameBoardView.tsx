@@ -108,11 +108,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   const [questionUsage, setQuestionUsage] = useState<QuestionStatusRow[]>([]);
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [gameState, setGameState] = useState<GameState | null>(null);
+
   const [buzzers, setBuzzers] = useState<LobbyPlayer[]>([]);
   const [isBuzzingAllowed, setIsBuzzingAllowed] = useState(false);
   const [buzzTimeLeft, setBuzzTimeLeft] = useState(0);
 
-  // Lokales Buzzer-Feedback
   const [justBuzzed, setJustBuzzed] = useState(false);
   const [hasBuzzedThisQuestion, setHasBuzzedThisQuestion] = useState(false);
 
@@ -124,13 +124,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
   const isHost = selfPlayer.is_host;
 
+  // ✅ aktuelles Board aus gameState (Default 1)
+  const activeBoard: 1 | 2 = ((gameState as any)?.board ?? 1) === 2 ? 2 : 1;
+  const pointsMultiplier = activeBoard === 2 ? 2 : 1;
+
   const getQuestionImageUrl = (imagePath?: string | null) => {
     if (!imagePath) return null;
     const { data } = supabase.storage.from("question-images").getPublicUrl(imagePath);
     return data.publicUrl;
   };
 
-  // 1) Quiz, Kategorien, Fragen (statisch)
+  // 1) Quiz, Kategorien, Fragen laden
   useEffect(() => {
     const loadStaticData = async () => {
       const { data: quizData } = await supabase
@@ -146,17 +150,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         .eq("quiz_id", lobby.quiz_id)
         .order("position", { ascending: true });
 
-      const cats = (catData ?? []) as QuizCategory[];
+      const cats = (catData ?? []) as any as QuizCategory[];
       setCategories(cats);
 
-      const categoryIds = cats.map((c) => c.id);
+      const categoryIds = cats.map((c: any) => c.id);
       if (categoryIds.length) {
         const { data: questionData } = await supabase
           .from("quiz_questions")
           .select("*")
           .in("category_id", categoryIds);
 
-        if (questionData) setQuestions(questionData as QuizQuestion[]);
+        if (questionData) setQuestions(questionData as any as QuizQuestion[]);
       }
     };
 
@@ -170,7 +174,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     const poll = async () => {
       if (!active) return;
 
-      // Lobby existiert?
       const { data: lobbyRow, error: lobbyError } = await supabase
         .from("lobbies")
         .select("id")
@@ -189,7 +192,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         return;
       }
 
-      // game_state holen oder anlegen
       const { data: gsData } = await supabase
         .from("game_states")
         .select("*")
@@ -199,7 +201,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       if (!active) return;
 
       if (gsData) {
-        setGameState(gsData as GameState);
+        setGameState(gsData as any as GameState);
       } else if (isHost) {
         await supabase.from("game_states").insert({
           lobby_id: lobby.id,
@@ -207,10 +209,10 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
           current_question_id: null,
           question_status: "idle",
           active_answering_player_id: null,
+          board: 1, // ✅ falls Spalte existiert
         });
       }
 
-      // Spieler
       const { data: playersData } = await supabase
         .from("lobby_players")
         .select("*")
@@ -225,7 +227,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         setPlayers(sorted);
       }
 
-      // Frage-Nutzung
       const { data: usageData } = await supabase
         .from("question_status")
         .select("*")
@@ -234,13 +235,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       if (!active) return;
       if (usageData) setQuestionUsage(usageData as QuestionStatusRow[]);
 
-      // Buzzes (nur wenn Frage aktiv)
-      if (gsData?.current_question_id) {
+      if ((gsData as any)?.current_question_id) {
         const { data: buzzData } = await supabase
           .from("buzzes")
           .select("player_id, created_at")
           .eq("lobby_id", lobby.id)
-          .eq("question_id", gsData.current_question_id)
+          .eq("question_id", (gsData as any).current_question_id)
           .order("created_at", { ascending: true });
 
         if (!active) return;
@@ -256,7 +256,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
           if (buzzPlayers) {
             const map = new Map(
-              (buzzPlayers as LobbyPlayer[]).map((p) => [p.id, p] as const)
+              (buzzPlayers as LobbyPlayer[]).map((p) => [p.id, p] as [string, LobbyPlayer])
             );
             const ordered: LobbyPlayer[] = [];
             for (const b of buzzData) {
@@ -282,112 +282,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     };
   }, [lobby.id, isHost]);
 
-  // usage map
-  const usageMap = useMemo(() => {
-    const map = new Map<string, boolean>();
-    for (const u of questionUsage) map.set(u.question_id, u.used);
-    return map;
-  }, [questionUsage]);
-
-  // usedSet für Board-Wechsel
-  const usedSet = useMemo(() => {
-    return new Set(questionUsage.filter((u) => u.used).map((u) => u.question_id));
-  }, [questionUsage]);
-
-  // Board 1 / Board 2 Kategorien (über categories.board)
-  const board1CategoryIds = useMemo(() => {
-    return new Set(
-      categories.filter((c: any) => (c.board ?? 1) === 1).map((c) => c.id)
-    );
-  }, [categories]);
-
-  const board2CategoryIds = useMemo(() => {
-    return new Set(
-      categories.filter((c: any) => (c.board ?? 1) === 2).map((c) => c.id)
-    );
-  }, [categories]);
-
-  const board1Questions = useMemo(() => {
-    return questions.filter((q) => board1CategoryIds.has(q.category_id));
-  }, [questions, board1CategoryIds]);
-
-  const board2Questions = useMemo(() => {
-    return questions.filter((q) => board2CategoryIds.has(q.category_id));
-  }, [questions, board2CategoryIds]);
-
-  const board1AllUsed = useMemo(() => {
-    return board1Questions.length > 0 && board1Questions.every((q) => usedSet.has(q.id));
-  }, [board1Questions, usedSet]);
-
-  const board2Exists = useMemo(() => board2Questions.length > 0, [board2Questions]);
-
-  const board2AllUsed = useMemo(() => {
-    if (!board2Exists) return false;
-    return board2Questions.every((q) => usedSet.has(q.id));
-  }, [board2Exists, board2Questions, usedSet]);
-
-  // ✅ Aktives Board automatisch bestimmen
-  const activeBoard: 1 | 2 = board2Exists && board1AllUsed ? 2 : 1;
-
-  // Kategorien/Fragen fürs aktuelle Board
-  const boardCategories = useMemo(() => {
-    return categories.filter((c: any) => (c.board ?? 1) === activeBoard);
-  }, [categories, activeBoard]);
-
-  const boardCategoryIds = useMemo(() => {
-    return new Set(boardCategories.map((c) => c.id));
-  }, [boardCategories]);
-
-  const boardQuestions = useMemo(() => {
-    return questions.filter((q) => boardCategoryIds.has(q.category_id));
-  }, [questions, boardCategoryIds]);
-
-  // Hilfsstrukturen (WICHTIG: Map basiert auf boardQuestions!)
-  const questionMap = useMemo(() => {
-    const byCategory: Record<string, QuizQuestion[]> = {};
-    for (const q of boardQuestions) {
-      if (!byCategory[q.category_id]) byCategory[q.category_id] = [];
-      byCategory[q.category_id].push(q);
-    }
-    return byCategory;
-  }, [boardQuestions]);
-
-  const nonHostPlayersOrdered = useMemo(
-    () =>
-      players
-        .filter((p) => !p.is_host)
-        .sort((a, b) => a.turn_order - b.turn_order),
-    [players]
-  );
-
-  const host = players.find((p) => p.is_host) || null;
-
-  const currentPlayer = useMemo(() => {
-    if (gameState?.current_player_id) {
-      const found = players.find((p) => p.id === gameState.current_player_id);
-      if (found) return found;
-    }
-    return nonHostPlayersOrdered[0] ?? undefined;
-  }, [players, gameState, nonHostPlayersOrdered]);
-
-  const currentQuestion = useMemo(() => {
-    if (!gameState?.current_question_id) return null;
-    return questions.find((q) => q.id === gameState.current_question_id) ?? null;
-  }, [gameState, questions]);
-
-  const activeAnsweringPlayer = useMemo(() => {
-    return players.find((p) => p.id === gameState?.active_answering_player_id);
-  }, [players, gameState]);
-
-  // 3) Buzzer-Status + 10-Sekunden-Timer (nur UI)
+  // 3) Timer fürs Buzzern (UI)
   useEffect(() => {
     let intervalId: number | undefined;
 
-    if (
-      gameState &&
-      gameState.question_status === "buzzing" &&
-      gameState.current_question_id
-    ) {
+    if (gameState && (gameState as any).question_status === "buzzing" && (gameState as any).current_question_id) {
       setIsBuzzingAllowed(true);
       setBuzzTimeLeft(10);
 
@@ -402,7 +301,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
           setBuzzTimeLeft(0);
           setIsBuzzingAllowed(false);
 
-          // ⛔ AUTOMATISCH SCHLIESSEN wenn niemand gebuzzert hat
+          // wenn niemand gebuzzert hat -> schließen
           if (buzzers.length === 0 && currentQuestion && isHost) {
             await markQuestionUsed(currentQuestion.id);
 
@@ -417,12 +316,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
             setGameState((prev) =>
               prev
-                ? {
-                    ...prev,
+                ? ({
+                    ...(prev as any),
                     current_question_id: null,
                     active_answering_player_id: null,
                     question_status: "idle",
-                  }
+                  } as any)
                 : prev
             );
 
@@ -442,17 +341,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
-    gameState?.question_status,
-    gameState?.current_question_id,
+    (gameState as any)?.question_status,
+    (gameState as any)?.current_question_id,
     buzzers.length,
     isHost,
   ]);
 
-  // 4) Host setzt beim ersten Mal den ersten Spieler (ohne Host) als current_player
+  // 4) Host setzt ersten Spieler (ohne Host) als current_player
   useEffect(() => {
     if (!isHost) return;
     if (!gameState) return;
-    if (gameState.current_player_id) return;
+    if ((gameState as any).current_player_id) return;
 
     const nonHostPlayers = players
       .filter((p) => !p.is_host)
@@ -466,145 +365,162 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       .eq("lobby_id", lobby.id);
   }, [isHost, gameState, players, lobby.id]);
 
-  // 5) Lokalen "hat gebuzzert"-Status zurücksetzen, wenn Frage wechselt oder geschlossen wird
+  // 5) Lokalen Buzz-Status resetten, wenn Frage wechselt
   useEffect(() => {
     setHasBuzzedThisQuestion(false);
     setJustBuzzed(false);
-  }, [gameState?.current_question_id]);
+  }, [(gameState as any)?.current_question_id]);
 
-  // ✅ Game Over / Board-Wechsel
+  // ========= Board-Filter (robust über Kategorien.board) =========
+
+  const boardCategories = useMemo(() => {
+    return (categories as any[]).filter((c) => ((c.board ?? 1) === activeBoard));
+  }, [categories, activeBoard]);
+
+  const boardCategoryIds = useMemo(() => {
+    return new Set(boardCategories.map((c: any) => c.id));
+  }, [boardCategories]);
+
+  const boardQuestions = useMemo(() => {
+    return (questions as any[]).filter((q) => boardCategoryIds.has(q.category_id));
+  }, [questions, boardCategoryIds]);
+
+  const questionMap = useMemo(() => {
+    const byCategory: Record<string, any[]> = {};
+    for (const q of boardQuestions) {
+      if (!byCategory[q.category_id]) byCategory[q.category_id] = [];
+      byCategory[q.category_id].push(q);
+    }
+    return byCategory;
+  }, [boardQuestions]);
+
+  const usageMap = useMemo(() => {
+    const map = new Map<string, boolean>();
+    for (const u of questionUsage) map.set(u.question_id, u.used);
+    return map;
+  }, [questionUsage]);
+
+  const nonHostPlayersOrdered = useMemo(() => {
+    return players
+      .filter((p) => !p.is_host)
+      .sort((a, b) => a.turn_order - b.turn_order);
+  }, [players]);
+
+  const host = players.find((p) => p.is_host) || null;
+
+  const currentPlayer = useMemo(() => {
+    if ((gameState as any)?.current_player_id) {
+      const found = players.find((p) => p.id === (gameState as any).current_player_id);
+      if (found) return found;
+    }
+    return nonHostPlayersOrdered[0] ?? undefined;
+  }, [players, gameState, nonHostPlayersOrdered]);
+
+  const currentQuestion = useMemo(() => {
+    if (!(gameState as any)?.current_question_id) return null;
+    return (questions as any[]).find((q) => q.id === (gameState as any).current_question_id) ?? null;
+  }, [gameState, questions]);
+
+  const activeAnsweringPlayer = useMemo(() => {
+    return players.find((p) => p.id === (gameState as any)?.active_answering_player_id);
+  }, [players, gameState]);
+
+  // ========= Board-Wechsel + GameOver =========
   useEffect(() => {
-    // Board 2 existiert und Board 1 ist voll -> noch KEIN Game Over
-    if (board2Exists && board1AllUsed && !board2AllUsed) {
-      setIsGameOver(false);
-      return;
-    }
+    if (!questions.length) return;
 
-    // Echtes Ende:
-    // - kein Board 2: Board 1 fertig
-    // - Board 2 vorhanden: Board 2 fertig
-    const gameOver =
-      (!board2Exists && board1AllUsed) || (board2Exists && board2AllUsed);
+    const run = async () => {
+      const usedSet = new Set(questionUsage.filter((u) => u.used).map((u) => u.question_id));
 
-    if (!gameOver) {
-      setIsGameOver(false);
-      return;
-    }
+      const board1CatIds = new Set((categories as any[]).filter((c) => (c.board ?? 1) === 1).map((c) => c.id));
+      const board2CatIds = new Set((categories as any[]).filter((c) => (c.board ?? 1) === 2).map((c) => c.id));
 
-    // Top 3 (ohne Host)
-    const nonHost = players.filter((p) => !p.is_host);
-    const sorted = [...nonHost].sort((a, b) => b.score - a.score);
-    setTopPlayers(sorted.slice(0, 3));
-    setIsGameOver(true);
+      const board1Questions = (questions as any[]).filter((q) => board1CatIds.has(q.category_id));
+      const board2QuestionsAll = (questions as any[]).filter((q) => board2CatIds.has(q.category_id));
 
-    // game_results loggen (nur Host)
-    const writeResults = async () => {
-      if (!isHost || sorted.length === 0) return;
+      const board1AllUsed =
+        board1Questions.length > 0 && board1Questions.every((q) => usedSet.has(q.id));
 
-      const bestScore = sorted[0]?.score ?? 0;
-      const rows = sorted
-        .filter((p) => (p as any).user_id)
-        .map((p) => ({
-          user_id: (p as any).user_id as string,
-          lobby_id: lobby.id,
-          final_score: p.score,
-          is_winner: p.score === bestScore,
-        }));
+      const board2AllUsed =
+        board2QuestionsAll.length > 0 && board2QuestionsAll.every((q) => usedSet.has(q.id));
 
-      if (rows.length) {
-        const { error } = await supabase.from("game_results").insert(rows);
-        if (error) console.error("Fehler beim Schreiben von game_results:", error);
+      const currentBoard: 1 | 2 = ((gameState as any)?.board ?? 1) === 2 ? 2 : 1;
+
+      // ✅ Wechsel: Board 1 fertig -> Board 2 starten
+      if (board1AllUsed && board2QuestionsAll.length > 0 && currentBoard === 1) {
+        setIsGameOver(false);
+
+        if (isHost) {
+          // buzzes reset
+          await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
+
+          // ✅ WICHTIG: used-Status zurücksetzen, damit Board 2 sauber startet
+          await supabase.from("question_status").delete().eq("lobby_id", lobby.id);
+
+          await supabase
+            .from("game_states")
+            .update({
+              board: 2,
+              current_question_id: null,
+              active_answering_player_id: null,
+              question_status: "idle",
+            })
+            .eq("lobby_id", lobby.id);
+
+          setGameState((prev) =>
+            prev
+              ? ({
+                  ...(prev as any),
+                  board: 2,
+                  current_question_id: null,
+                  active_answering_player_id: null,
+                  question_status: "idle",
+                } as any)
+              : prev
+          );
+        }
+
+        return; // ⛔ kein GameOver anzeigen
+      }
+
+      // ✅ echtes GameOver:
+      // - kein Board 2 vorhanden und Board1 fertig
+      // - oder Board2 vorhanden und Board2 fertig
+      const gameOver =
+        (board2QuestionsAll.length === 0 && board1AllUsed) ||
+        (board2QuestionsAll.length > 0 && board2AllUsed);
+
+      if (!gameOver) {
+        setIsGameOver(false);
+        return;
+      }
+
+      const nonHost = players.filter((p) => !p.is_host);
+      const sorted = [...nonHost].sort((a, b) => b.score - a.score);
+      setTopPlayers(sorted.slice(0, 3));
+      setIsGameOver(true);
+
+      if (isHost && sorted.length > 0) {
+        const bestScore = sorted[0]?.score ?? 0;
+        const rows = sorted
+          .filter((p) => (p as any).user_id)
+          .map((p) => ({
+            user_id: (p as any).user_id as string,
+            lobby_id: lobby.id,
+            final_score: p.score,
+            is_winner: p.score === bestScore,
+          }));
+
+        if (rows.length) {
+          await supabase.from("game_results").insert(rows);
+        }
       }
     };
 
-    writeResults();
-  }, [board1AllUsed, board2AllUsed, board2Exists, players, isHost, lobby.id]);
+    run();
+  }, [questions, categories, questionUsage, players, isHost, lobby.id, gameState]);
 
-  // --- Aktionen ---
-  const handleSelectQuestion = async (q: QuizQuestion) => {
-    if (!isHost) return;
-    if (!gameState) return;
-
-    const used = usageMap.get(q.id);
-    if (used) return;
-
-    const currentPlayerId =
-      gameState.current_player_id ?? nonHostPlayersOrdered[0]?.id ?? null;
-
-    if (!currentPlayerId) return;
-
-    const { error } = await supabase
-      .from("game_states")
-      .update({
-        current_player_id: currentPlayerId,
-        current_question_id: q.id,
-        question_status: "answering",
-        active_answering_player_id: currentPlayerId,
-      })
-      .eq("lobby_id", lobby.id);
-
-    if (!error) {
-      setGameState((prev) =>
-        prev
-          ? {
-              ...prev,
-              current_player_id: currentPlayerId,
-              current_question_id: q.id,
-              question_status: "answering",
-              active_answering_player_id: currentPlayerId,
-            }
-          : prev
-      );
-    } else {
-      console.error("Fehler beim Auswählen der Frage:", error.message);
-    }
-  };
-
-  const handleBuzz = async () => {
-    if (!gameState || !gameState.current_question_id) return;
-    if (selfPlayer.is_host) return;
-    if (!isBuzzingAllowed) return;
-
-    // Der Spieler, der gerade an der Reihe ist, darf nicht buzzern
-    if (currentPlayer && selfPlayer.id === currentPlayer.id) return;
-
-    if (hasBuzzedThisQuestion) return;
-
-    setHasBuzzedThisQuestion(true);
-    setJustBuzzed(true);
-    window.setTimeout(() => setJustBuzzed(false), 400);
-
-    await supabase.from("buzzes").insert({
-      lobby_id: lobby.id,
-      player_id: selfPlayer.id,
-      question_id: gameState.current_question_id,
-    });
-  };
-
-  const changeScore = async (playerId: string, delta: number) => {
-    const player = players.find((p) => p.id === playerId);
-    if (!player) return;
-    await supabase
-      .from("lobby_players")
-      .update({ score: player.score + delta })
-      .eq("id", playerId);
-  };
-
-  const logAnswerEvent = async (
-    player: LobbyPlayer,
-    isCorrect: boolean,
-    pointsChange: number,
-    questionId: string
-  ) => {
-    if (!player.user_id) return;
-    await supabase.from("answer_logs").insert({
-      user_id: player.user_id,
-      lobby_id: lobby.id,
-      question_id: questionId,
-      is_correct: isCorrect,
-      points_change: pointsChange,
-    });
-  };
+  // ========= Spiel-Logik =========
 
   const markQuestionUsed = async (questionId: string) => {
     const existing = questionUsage.find((u) => u.question_id === questionId);
@@ -623,12 +539,10 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!gameState) return;
     if (!nonHostPlayersOrdered.length) return;
 
-    const currentId = gameState.current_player_id ?? nonHostPlayersOrdered[0].id;
+    const currentId = (gameState as any).current_player_id ?? nonHostPlayersOrdered[0].id;
 
     const currentIndex = nonHostPlayersOrdered.findIndex((p) => p.id === currentId);
-    const nextIndex =
-      currentIndex === -1 ? 0 : (currentIndex + 1) % nonHostPlayersOrdered.length;
-
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % nonHostPlayersOrdered.length;
     const nextPlayerId = nonHostPlayersOrdered[nextIndex].id;
 
     const { error } = await supabase
@@ -644,44 +558,125 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!error) {
       setGameState((prev) =>
         prev
-          ? {
-              ...prev,
+          ? ({
+              ...(prev as any),
               current_player_id: nextPlayerId,
               current_question_id: null,
               active_answering_player_id: null,
               question_status: "idle",
-            }
+            } as any)
           : prev
       );
     }
   };
 
+  const changeScore = async (playerId: string, delta: number) => {
+    const player = players.find((p) => p.id === playerId);
+    if (!player) return;
+    await supabase.from("lobby_players").update({ score: player.score + delta }).eq("id", playerId);
+  };
+
+  const logAnswerEvent = async (
+    player: LobbyPlayer,
+    isCorrect: boolean,
+    pointsChange: number,
+    questionId: string
+  ) => {
+    if (!(player as any).user_id) return;
+    await supabase.from("answer_logs").insert({
+      user_id: (player as any).user_id,
+      lobby_id: lobby.id,
+      question_id: questionId,
+      is_correct: isCorrect,
+      points_change: pointsChange,
+    });
+  };
+
+  const handleSelectQuestion = async (q: any) => {
+    if (!isHost) return;
+    if (!gameState) return;
+
+    const used = usageMap.get(q.id);
+    if (used) return;
+
+    const currentPlayerId = (gameState as any).current_player_id ?? nonHostPlayersOrdered[0]?.id ?? null;
+    if (!currentPlayerId) return;
+
+    const { error } = await supabase
+      .from("game_states")
+      .update({
+        current_player_id: currentPlayerId,
+        current_question_id: q.id,
+        question_status: "answering",
+        active_answering_player_id: currentPlayerId,
+      })
+      .eq("lobby_id", lobby.id);
+
+    if (!error) {
+      setGameState((prev) =>
+        prev
+          ? ({
+              ...(prev as any),
+              current_player_id: currentPlayerId,
+              current_question_id: q.id,
+              question_status: "answering",
+              active_answering_player_id: currentPlayerId,
+            } as any)
+          : prev
+      );
+    }
+  };
+
+  const handleBuzz = async () => {
+    if (!gameState || !(gameState as any).current_question_id) return;
+    if (selfPlayer.is_host) return;
+    if (!isBuzzingAllowed) return;
+
+    if (currentPlayer && selfPlayer.id === currentPlayer.id) return;
+    if (hasBuzzedThisQuestion) return;
+
+    setHasBuzzedThisQuestion(true);
+    setJustBuzzed(true);
+    window.setTimeout(() => setJustBuzzed(false), 400);
+
+    await supabase.from("buzzes").insert({
+      lobby_id: lobby.id,
+      player_id: selfPlayer.id,
+      question_id: (gameState as any).current_question_id,
+    });
+  };
+
   const handleHostCorrect = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
 
-    const points = currentQuestion.points;
+    const basePoints = (currentQuestion as any).points ?? 0;
+    const points = basePoints * pointsMultiplier;
+
     const targetPlayer = activeAnsweringPlayer ?? currentPlayer;
     if (!targetPlayer) return;
 
     await changeScore(targetPlayer.id, points);
-    await markQuestionUsed(currentQuestion.id);
+    await markQuestionUsed((currentQuestion as any).id);
     await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
     setBuzzers([]);
-    await logAnswerEvent(targetPlayer, true, points, currentQuestion.id);
+    await logAnswerEvent(targetPlayer, true, points, (currentQuestion as any).id);
     await goToNextPlayer();
   };
 
   const handleHostWrong = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
 
-    const half = Math.floor(currentQuestion.points / 2);
+    const basePoints = (currentQuestion as any).points ?? 0;
+    const points = basePoints * pointsMultiplier;
+    const half = Math.floor(points / 2);
+
     const targetPlayer = activeAnsweringPlayer ?? currentPlayer;
     if (!targetPlayer) return;
 
     await changeScore(targetPlayer.id, -half);
-    await logAnswerEvent(targetPlayer, false, -half, currentQuestion.id);
+    await logAnswerEvent(targetPlayer, false, -half, (currentQuestion as any).id);
 
-    if (gameState.question_status === "answering") {
+    if ((gameState as any).question_status === "answering") {
       const { error } = await supabase
         .from("game_states")
         .update({
@@ -693,15 +688,15 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       if (!error) {
         setGameState((prev) =>
           prev
-            ? {
-                ...prev,
+            ? ({
+                ...(prev as any),
                 question_status: "buzzing",
                 active_answering_player_id: null,
-              }
+              } as any)
             : prev
         );
       }
-    } else if (gameState.question_status === "buzzing") {
+    } else if ((gameState as any).question_status === "buzzing") {
       const remaining = buzzers.filter((b) => b.id !== targetPlayer.id);
       setBuzzers(remaining);
 
@@ -712,7 +707,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         .eq("player_id", targetPlayer.id);
 
       if (remaining.length === 0) {
-        await markQuestionUsed(currentQuestion.id);
+        await markQuestionUsed((currentQuestion as any).id);
 
         await supabase
           .from("game_states")
@@ -725,12 +720,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
         setGameState((prev) =>
           prev
-            ? {
-                ...prev,
+            ? ({
+                ...(prev as any),
                 current_question_id: null,
                 active_answering_player_id: null,
                 question_status: "idle",
-              }
+              } as any)
             : prev
         );
 
@@ -750,11 +745,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
       setGameState((prev) =>
         prev
-          ? {
-              ...prev,
+          ? ({
+              ...(prev as any),
               active_answering_player_id: next.id,
               question_status: "answering",
-            }
+            } as any)
           : prev
       );
     }
@@ -763,20 +758,19 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   const handleHostSkipQuestion = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
 
-    await markQuestionUsed(currentQuestion.id);
+    await markQuestionUsed((currentQuestion as any).id);
 
     await supabase
       .from("buzzes")
       .delete()
       .eq("lobby_id", lobby.id)
-      .eq("question_id", currentQuestion.id);
+      .eq("question_id", (currentQuestion as any).id);
 
     setBuzzers([]);
 
     const { error } = await supabase
       .from("game_states")
       .update({
-        current_player_id: gameState.current_player_id,
         current_question_id: null,
         active_answering_player_id: null,
         question_status: "idle",
@@ -786,12 +780,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!error) {
       setGameState((prev) =>
         prev
-          ? {
-              ...prev,
+          ? ({
+              ...(prev as any),
               current_question_id: null,
               active_answering_player_id: null,
               question_status: "idle",
-            }
+            } as any)
           : prev
       );
     }
@@ -813,16 +807,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!error) {
       setGameState((prev) =>
         prev
-          ? {
-              ...prev,
+          ? ({
+              ...(prev as any),
               active_answering_player_id: player.id,
               question_status: "answering",
-            }
+            } as any)
           : prev
       );
     }
   };
 
+  // Leave
   const handleLeaveGame = async () => {
     if (leaving) return;
     setLeaveMessage(null);
@@ -835,13 +830,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         await supabase.from("game_states").delete().eq("lobby_id", lobby.id);
         await supabase.from("lobby_players").delete().eq("lobby_id", lobby.id);
         await supabase.from("lobbies").delete().eq("id", lobby.id);
-
         window.location.href = "/";
         return;
       }
 
-      // Spieler: wenn am Zug -> nächste Person setzen
-      if (gameState && gameState.current_player_id === selfPlayer.id) {
+      if (gameState && (gameState as any).current_player_id === selfPlayer.id) {
         const original = nonHostPlayersOrdered;
         const idx = original.findIndex((p) => p.id === selfPlayer.id);
 
@@ -861,13 +854,13 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
           setGameState((prev) =>
             prev
-              ? {
-                  ...prev,
+              ? ({
+                  ...(prev as any),
                   current_player_id: nextId,
                   current_question_id: null,
                   active_answering_player_id: null,
                   question_status: "idle",
-                }
+                } as any)
               : prev
           );
         } else {
@@ -883,13 +876,13 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
           setGameState((prev) =>
             prev
-              ? {
-                  ...prev,
+              ? ({
+                  ...(prev as any),
                   current_player_id: null,
                   current_question_id: null,
                   active_answering_player_id: null,
                   question_status: "idle",
-                }
+                } as any)
               : prev
           );
         }
@@ -912,17 +905,17 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     }
   };
 
-  // Board zeigt max. 6 Kategorien
   const gridCategories = boardCategories.slice(0, 6);
-
   const showQuestionOverlay = !!currentQuestion;
 
   const selfHasBuzzed = buzzers.some((b) => b.id === selfPlayer.id);
   const alreadyBuzzed = hasBuzzedThisQuestion || selfHasBuzzed;
 
+  const basePointsList = [100, 200, 300, 500];
+
   return (
     <div className="relative flex flex-col gap-4 min-h-[80vh] pb-4">
-      {/* Titel + Verlassen */}
+      {/* Titel + Verlassen-Button */}
       <div className="flex items-center justify-center gap-3 px-4 mt-2">
         <button
           onClick={handleLeaveGame}
@@ -944,13 +937,14 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
         <div className="text-center">
           <h2 className="text-2xl md:text-3xl font-bold">
-            {quiz?.name ?? "Quiz"}
+            {quiz?.name ?? "Quiz"}{" "}
+            <span className="text-xs text-slate-400">
+              (Board {activeBoard}{activeBoard === 2 ? " • Punkte x2" : ""})
+            </span>
           </h2>
           <p className="text-xs text-slate-400">
             Lobby: {lobby.name} • Du bist {selfPlayer.name}
             {selfPlayer.is_host ? " (Host)" : ""}
-            {" • "}
-            {activeBoard === 1 ? "Board 1" : "Board 2 (x2 Punkte)"}
           </p>
         </div>
       </div>
@@ -1014,12 +1008,13 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       <div className="flex-1 flex items-center justify-center">
         <div className="w-full max-w-3xl px-2">
           <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {gridCategories.map((cat) => (
+            {gridCategories.map((cat: any) => (
               <div key={cat.id} className="flex flex-col gap-2">
                 <CategoryTitle name={cat.name} />
-                {[100, 200, 300, 500].map((pts) => {
-                  const q = questionMap[cat.id]?.find((qq) => qq.points === pts);
-                  if (!q) return <div key={pts} className="h-10 md:h-16" />;
+
+                {basePointsList.map((basePts) => {
+                  const q: any = questionMap[cat.id]?.find((qq: any) => qq.points === basePts);
+                  if (!q) return <div key={basePts} className="h-10 md:h-16" />;
 
                   const used = usageMap.get(q.id);
                   const disabled = used || !isHost;
@@ -1036,7 +1031,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                             : "bg-indigo-500 hover:bg-indigo-600 text-white"
                         }`}
                     >
-                      {pts}
+                      {basePts * pointsMultiplier}
                     </button>
                   );
                 })}
@@ -1050,15 +1045,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       <div className="mt-3 w-full pb-2">
         <div className="max-w-lg mx-auto px-2 flex flex-col gap-2">
           {host && (
-            <div
-              className="
-                w-full px-2 py-1.5 rounded-lg
-                flex items-center justify-between
-                border border-slate-600
-                bg-slate-800/80 shadow-sm
-                text-xs
-              "
-            >
+            <div className="w-full px-2 py-1.5 rounded-lg flex items-center justify-between border border-slate-600 bg-slate-800/80 shadow-sm text-xs">
               <span className="font-semibold truncate">{host.name}</span>
               <span className="text-[10px] text-amber-300 font-mono">HOST</span>
             </div>
@@ -1067,7 +1054,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
           <div className="grid grid-cols-2 gap-2">
             {nonHostPlayersOrdered.map((p) => {
               const firstPlayerId = nonHostPlayersOrdered[0]?.id;
-              const activeId = gameState?.current_player_id ?? firstPlayerId ?? null;
+              const activeId = (gameState as any)?.current_player_id ?? firstPlayerId ?? null;
 
               const isActive = p.id === activeId;
               const hasBuzzed = buzzers.some((b) => b.id === p.id);
@@ -1078,15 +1065,10 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                   className={`
                     px-2 py-1.5 rounded-lg flex items-center justify-between
                     border transition text-xs
-                    ${
-                      isActive
-                        ? "border-emerald-400 bg-slate-800 shadow-md"
-                        : "border-slate-700 bg-slate-900"
-                    }
+                    ${isActive ? "border-emerald-400 bg-slate-800 shadow-md" : "border-slate-700 bg-slate-900"}
                   `}
                 >
                   <span className="font-semibold truncate">{p.name}</span>
-
                   <div className="flex items-center gap-1.5">
                     {hasBuzzed && <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
                     <span className="font-mono">{p.score}</span>
@@ -1098,20 +1080,20 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         </div>
       </div>
 
-      {/* FRAGEN-OVERLAY */}
+      {/* Fragen-Overlay */}
       {showQuestionOverlay && currentQuestion && (
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-[90%] p-6 space-y-4">
             <div className="text-xs text-slate-400">
-              Frage für {currentQuestion.points} Punkte •{" "}
+              Frage für {(currentQuestion as any).points * pointsMultiplier} Punkte •{" "}
               {currentPlayer ? `Am Zug: ${currentPlayer.name}` : ""}
             </div>
 
             {(currentQuestion as any).question_type === "image" ? (
               <div className="space-y-3">
-                {currentQuestion.question?.trim() && (
+                {!!(currentQuestion as any).question?.trim() && (
                   <div className="text-lg md:text-2xl font-semibold text-center">
-                    {currentQuestion.question}
+                    {(currentQuestion as any).question}
                   </div>
                 )}
 
@@ -1127,16 +1109,15 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
               </div>
             ) : (
               <div className="text-lg md:text-2xl font-semibold text-center">
-                {currentQuestion.question}
+                {(currentQuestion as any).question}
               </div>
             )}
 
-            {/* Host */}
             {isHost && (
               <div className="space-y-3">
                 <div className="text-xs text-emerald-300">
                   Antwort (nur Host):{" "}
-                  <span className="font-mono">{currentQuestion.answer}</span>
+                  <span className="font-mono">{(currentQuestion as any).answer}</span>
                 </div>
 
                 <div className="flex flex-col md:flex-row gap-2">
@@ -1161,7 +1142,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                   Frage schließen / überspringen
                 </button>
 
-                {(gameState?.question_status === "buzzing" || buzzers.length > 0) && (
+                {(((gameState as any)?.question_status === "buzzing") || buzzers.length > 0) && (
                   <div className="border border-slate-700 rounded-lg p-2 text-xs space-y-1">
                     <div className="font-semibold text-slate-100 mb-1">
                       Buzzer-Reihenfolge
@@ -1178,7 +1159,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                         <span>
                           #{i + 1} {p.name}
                         </span>
-                        {gameState?.active_answering_player_id === p.id && (
+                        {(gameState as any)?.active_answering_player_id === p.id && (
                           <span className="text-emerald-400 text-[10px]">am Zug</span>
                         )}
                       </button>
@@ -1188,7 +1169,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
               </div>
             )}
 
-            {/* Spieler */}
             {!isHost && (
               <div className="flex flex-col items-center gap-3 w-full">
                 <p className="text-xs text-slate-400 text-center px-2">
