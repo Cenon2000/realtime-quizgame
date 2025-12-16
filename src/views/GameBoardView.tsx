@@ -124,13 +124,19 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
   const isHost = selfPlayer.is_host;
 
-  // ✅ aktuelles Board aus gameState (Default 1)
-  const activeBoard: 1 | 2 = ((gameState as any)?.board ?? 1) === 2 ? 2 : 1;
+  // ✅ aktives Board IMMER über current_board (Fallback: board)
+  const activeBoard: 1 | 2 =
+    (((gameState as any)?.current_board ?? (gameState as any)?.board ?? 1) === 2
+      ? 2
+      : 1);
+
   const pointsMultiplier = activeBoard === 2 ? 2 : 1;
 
   const getQuestionImageUrl = (imagePath?: string | null) => {
     if (!imagePath) return null;
-    const { data } = supabase.storage.from("question-images").getPublicUrl(imagePath);
+    const { data } = supabase.storage
+      .from("question-images")
+      .getPublicUrl(imagePath);
     return data.publicUrl;
   };
 
@@ -153,7 +159,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       const cats = (catData ?? []) as any as QuizCategory[];
       setCategories(cats);
 
-      const categoryIds = cats.map((c: any) => c.id);
+      const categoryIds = (cats as any[]).map((c) => c.id);
       if (categoryIds.length) {
         const { data: questionData } = await supabase
           .from("quiz_questions")
@@ -167,7 +173,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     loadStaticData();
   }, [lobby.quiz_id]);
 
-  // 2) Polling: Lobby + game_state + Spieler + Frage-Status + Buzzes
+  // 2) Polling
   useEffect(() => {
     let active = true;
 
@@ -203,13 +209,15 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       if (gsData) {
         setGameState(gsData as any as GameState);
       } else if (isHost) {
+        // ✅ bei dir existieren current_board UND board → setze beide
         await supabase.from("game_states").insert({
           lobby_id: lobby.id,
           current_player_id: null,
           current_question_id: null,
           question_status: "idle",
           active_answering_player_id: null,
-          board: 1, // ✅ falls Spalte existiert
+          current_board: 1,
+          board: 1,
         });
       }
 
@@ -256,7 +264,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
           if (buzzPlayers) {
             const map = new Map(
-              (buzzPlayers as LobbyPlayer[]).map((p) => [p.id, p] as [string, LobbyPlayer])
+              (buzzPlayers as LobbyPlayer[]).map((p) => [p.id, p] as const)
             );
             const ordered: LobbyPlayer[] = [];
             for (const b of buzzData) {
@@ -286,7 +294,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   useEffect(() => {
     let intervalId: number | undefined;
 
-    if (gameState && (gameState as any).question_status === "buzzing" && (gameState as any).current_question_id) {
+    if (
+      gameState &&
+      (gameState as any).question_status === "buzzing" &&
+      (gameState as any).current_question_id
+    ) {
       setIsBuzzingAllowed(true);
       setBuzzTimeLeft(10);
 
@@ -301,9 +313,8 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
           setBuzzTimeLeft(0);
           setIsBuzzingAllowed(false);
 
-          // wenn niemand gebuzzert hat -> schließen
           if (buzzers.length === 0 && currentQuestion && isHost) {
-            await markQuestionUsed(currentQuestion.id);
+            await markQuestionUsed((currentQuestion as any).id);
 
             await supabase
               .from("game_states")
@@ -371,10 +382,10 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     setJustBuzzed(false);
   }, [(gameState as any)?.current_question_id]);
 
-  // ========= Board-Filter (robust über Kategorien.board) =========
+  // ========= Board-Filter (über quiz_categories.board) =========
 
   const boardCategories = useMemo(() => {
-    return (categories as any[]).filter((c) => ((c.board ?? 1) === activeBoard));
+    return (categories as any[]).filter((c) => (c.board ?? 1) === activeBoard);
   }, [categories, activeBoard]);
 
   const boardCategoryIds = useMemo(() => {
@@ -430,36 +441,53 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!questions.length) return;
 
     const run = async () => {
-      const usedSet = new Set(questionUsage.filter((u) => u.used).map((u) => u.question_id));
+      const usedSet = new Set(
+        questionUsage.filter((u) => u.used).map((u) => u.question_id)
+      );
 
-      const board1CatIds = new Set((categories as any[]).filter((c) => (c.board ?? 1) === 1).map((c) => c.id));
-      const board2CatIds = new Set((categories as any[]).filter((c) => (c.board ?? 1) === 2).map((c) => c.id));
+      const board1CatIds = new Set(
+        (categories as any[])
+          .filter((c) => (c.board ?? 1) === 1)
+          .map((c) => c.id)
+      );
+      const board2CatIds = new Set(
+        (categories as any[])
+          .filter((c) => (c.board ?? 1) === 2)
+          .map((c) => c.id)
+      );
 
-      const board1Questions = (questions as any[]).filter((q) => board1CatIds.has(q.category_id));
-      const board2QuestionsAll = (questions as any[]).filter((q) => board2CatIds.has(q.category_id));
+      const board1QuestionsAll = (questions as any[]).filter((q) =>
+        board1CatIds.has(q.category_id)
+      );
+      const board2QuestionsAll = (questions as any[]).filter((q) =>
+        board2CatIds.has(q.category_id)
+      );
 
       const board1AllUsed =
-        board1Questions.length > 0 && board1Questions.every((q) => usedSet.has(q.id));
+        board1QuestionsAll.length > 0 &&
+        board1QuestionsAll.every((q) => usedSet.has(q.id));
 
       const board2AllUsed =
-        board2QuestionsAll.length > 0 && board2QuestionsAll.every((q) => usedSet.has(q.id));
+        board2QuestionsAll.length > 0 &&
+        board2QuestionsAll.every((q) => usedSet.has(q.id));
 
-      const currentBoard: 1 | 2 = ((gameState as any)?.board ?? 1) === 2 ? 2 : 1;
+      const currentBoard: 1 | 2 =
+        (((gameState as any)?.current_board ?? (gameState as any)?.board ?? 1) === 2
+          ? 2
+          : 1);
 
       // ✅ Wechsel: Board 1 fertig -> Board 2 starten
       if (board1AllUsed && board2QuestionsAll.length > 0 && currentBoard === 1) {
         setIsGameOver(false);
 
         if (isHost) {
-          // buzzes reset
           await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
 
-          // ✅ WICHTIG: used-Status zurücksetzen, damit Board 2 sauber startet
-          await supabase.from("question_status").delete().eq("lobby_id", lobby.id);
-
+          // ✅ setze BEIDE Felder, weil du current_board + board hast
           await supabase
             .from("game_states")
             .update({
+              current_board: 2,
               board: 2,
               current_question_id: null,
               active_answering_player_id: null,
@@ -471,6 +499,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
             prev
               ? ({
                   ...(prev as any),
+                  current_board: 2,
                   board: 2,
                   current_question_id: null,
                   active_answering_player_id: null,
@@ -484,8 +513,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       }
 
       // ✅ echtes GameOver:
-      // - kein Board 2 vorhanden und Board1 fertig
-      // - oder Board2 vorhanden und Board2 fertig
       const gameOver =
         (board2QuestionsAll.length === 0 && board1AllUsed) ||
         (board2QuestionsAll.length > 0 && board2AllUsed);
@@ -539,10 +566,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     if (!gameState) return;
     if (!nonHostPlayersOrdered.length) return;
 
-    const currentId = (gameState as any).current_player_id ?? nonHostPlayersOrdered[0].id;
+    const currentId =
+      (gameState as any).current_player_id ?? nonHostPlayersOrdered[0].id;
 
     const currentIndex = nonHostPlayersOrdered.findIndex((p) => p.id === currentId);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % nonHostPlayersOrdered.length;
+    const nextIndex =
+      currentIndex === -1 ? 0 : (currentIndex + 1) % nonHostPlayersOrdered.length;
     const nextPlayerId = nonHostPlayersOrdered[nextIndex].id;
 
     const { error } = await supabase
@@ -573,7 +602,10 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   const changeScore = async (playerId: string, delta: number) => {
     const player = players.find((p) => p.id === playerId);
     if (!player) return;
-    await supabase.from("lobby_players").update({ score: player.score + delta }).eq("id", playerId);
+    await supabase
+      .from("lobby_players")
+      .update({ score: player.score + delta })
+      .eq("id", playerId);
   };
 
   const logAnswerEvent = async (
@@ -599,7 +631,8 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     const used = usageMap.get(q.id);
     if (used) return;
 
-    const currentPlayerId = (gameState as any).current_player_id ?? nonHostPlayersOrdered[0]?.id ?? null;
+    const currentPlayerId =
+      (gameState as any).current_player_id ?? nonHostPlayersOrdered[0]?.id ?? null;
     if (!currentPlayerId) return;
 
     const { error } = await supabase
@@ -1013,7 +1046,9 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                 <CategoryTitle name={cat.name} />
 
                 {basePointsList.map((basePts) => {
-                  const q: any = questionMap[cat.id]?.find((qq: any) => qq.points === basePts);
+                  const q: any = questionMap[cat.id]?.find(
+                    (qq: any) => qq.points === basePts
+                  );
                   if (!q) return <div key={basePts} className="h-10 md:h-16" />;
 
                   const used = usageMap.get(q.id);
@@ -1054,7 +1089,8 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
           <div className="grid grid-cols-2 gap-2">
             {nonHostPlayersOrdered.map((p) => {
               const firstPlayerId = nonHostPlayersOrdered[0]?.id;
-              const activeId = (gameState as any)?.current_player_id ?? firstPlayerId ?? null;
+              const activeId =
+                (gameState as any)?.current_player_id ?? firstPlayerId ?? null;
 
               const isActive = p.id === activeId;
               const hasBuzzed = buzzers.some((b) => b.id === p.id);
@@ -1070,7 +1106,9 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                 >
                   <span className="font-semibold truncate">{p.name}</span>
                   <div className="flex items-center gap-1.5">
-                    {hasBuzzed && <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />}
+                    {hasBuzzed && (
+                      <div className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    )}
                     <span className="font-mono">{p.score}</span>
                   </div>
                 </div>
