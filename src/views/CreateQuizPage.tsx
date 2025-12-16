@@ -183,7 +183,7 @@ export default function CreateQuizPage({ onBack }: Props) {
               quiz_id: quizData.id,
               name: catForm.name.trim() || `Kategorie ${i + 1}`,
               position: i,
-              board, // ✅ wichtig
+              board: 1, // ✅ wichtig
             })
             .select()
             .single();
@@ -213,7 +213,7 @@ export default function CreateQuizPage({ onBack }: Props) {
               answer: q.answer.trim() || "Antwort",
               question_type: q.question_type,
               image_path: imagePath,
-              board, // ✅ wichtig (falls du auch in quiz_questions ein board hast)
+              board: 1, // ✅ wichtig (falls du auch in quiz_questions ein board hast)
             });
           }
 
