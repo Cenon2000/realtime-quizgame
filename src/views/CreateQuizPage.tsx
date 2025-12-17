@@ -60,6 +60,27 @@ export default function CreateQuizPage({ onBack }: Props) {
   // Board 2
   const [enableBoard2, setEnableBoard2] = useState(true);
   const [categoryCount2, setCategoryCount2] = useState(6);
+
+const [categoryCount1Input, setCategoryCount1Input] = useState("6");
+const [categoryCount2Input, setCategoryCount2Input] = useState("6");
+
+function clampCategoryCount(n: number) {
+  return Math.min(6, Math.max(1, n));
+}
+
+function commitCategoryCount(board: 1 | 2, raw: string) {
+  const current = board === 1 ? categoryCount1 : categoryCount2;
+  const n = raw.trim() === "" ? current : Number(raw);
+  const clamped = clampCategoryCount(Number.isFinite(n) ? n : current);
+
+  if (board === 1) {
+    setCategoryCount1(clamped);
+    setCategoryCount1Input(String(clamped));
+  } else {
+    setCategoryCount2(clamped);
+    setCategoryCount2Input(String(clamped));
+  }
+}
   const [categories2, setCategories2] = useState<CategoryForm[]>(
     makeEmptyCategories(6)
   );
@@ -310,35 +331,108 @@ export default function CreateQuizPage({ onBack }: Props) {
           </div>
 
           {/* Kategorieanzahl pro Board */}
-          {activeBoardEditor === 1 ? (
-            <label className="flex flex-col gap-1 text-sm">
-              <span>Anzahl Kategorien Board 1 (max. 6)</span>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-                value={categoryCount1}
-                onChange={(e) =>
-                  setCategoryCount1(Math.max(1, Math.min(6, Number(e.target.value) || 1)))
-                }
-              />
-            </label>
-          ) : (
-            <label className="flex flex-col gap-1 text-sm">
-              <span>Anzahl Kategorien Board 2 (max. 6)</span>
-              <input
-                type="number"
-                min={1}
-                max={6}
-                className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-                value={categoryCount2}
-                onChange={(e) =>
-                  setCategoryCount2(Math.max(1, Math.min(6, Number(e.target.value) || 1)))
-                }
-              />
-            </label>
-          )}
+{activeBoardEditor === 1 ? (
+  <label className="flex flex-col gap-1 text-sm">
+    <span>Anzahl Kategorien Board 1 (max. 6)</span>
+
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        onClick={() => {
+          const next = clampCategoryCount(categoryCount1 - 1);
+          setCategoryCount1(next);
+          setCategoryCount1Input(String(next));
+        }}
+        disabled={categoryCount1 <= 1}
+        aria-label="Kategorien Board 1 verringern"
+        title="Verringern"
+      >
+        −
+      </button>
+
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        className="w-24 text-center px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        value={categoryCount1Input}
+        onChange={(e) => {
+          const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+          setCategoryCount1Input(onlyDigits);
+        }}
+        onBlur={() => commitCategoryCount(1, categoryCount1Input)}
+        placeholder="1–6"
+      />
+
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        onClick={() => {
+          const next = clampCategoryCount(categoryCount1 + 1);
+          setCategoryCount1(next);
+          setCategoryCount1Input(String(next));
+        }}
+        disabled={categoryCount1 >= 6}
+        aria-label="Kategorien Board 1 erhöhen"
+        title="Erhöhen"
+      >
+        +
+      </button>
+    </div>
+  </label>
+) : (
+  <label className="flex flex-col gap-1 text-sm">
+    <span>Anzahl Kategorien Board 2 (max. 6)</span>
+
+    <div className="flex items-center gap-2">
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        onClick={() => {
+          const next = clampCategoryCount(categoryCount2 - 1);
+          setCategoryCount2(next);
+          setCategoryCount2Input(String(next));
+        }}
+        disabled={categoryCount2 <= 1}
+        aria-label="Kategorien Board 2 verringern"
+        title="Verringern"
+      >
+        −
+      </button>
+
+      <input
+        type="text"
+        inputMode="numeric"
+        pattern="[0-9]*"
+        className="w-24 text-center px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        value={categoryCount2Input}
+        onChange={(e) => {
+          const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+          setCategoryCount2Input(onlyDigits);
+        }}
+        onBlur={() => commitCategoryCount(2, categoryCount2Input)}
+        placeholder="1–6"
+      />
+
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+        onClick={() => {
+          const next = clampCategoryCount(categoryCount2 + 1);
+          setCategoryCount2(next);
+          setCategoryCount2Input(String(next));
+        }}
+        disabled={categoryCount2 >= 6}
+        aria-label="Kategorien Board 2 erhöhen"
+        title="Erhöhen"
+      >
+        +
+      </button>
+    </div>
+  </label>
+)}
+
 
           <button
             onClick={handleSubmit}
