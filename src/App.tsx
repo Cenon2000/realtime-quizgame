@@ -7,6 +7,7 @@ import JoinGamePage from "./views/JoinGamePage";
 import LobbyView from "./views/LobbyView";
 import GameBoardView from "./views/GameBoardView";
 import type { Lobby, LobbyPlayer } from "./types";
+import ResetPasswordPage from "./views/ResetPasswordPage";
 
 type View =
   | { name: "landing" }
@@ -330,6 +331,11 @@ function App() {
         Lade...
       </div>
     );
+  }
+
+    // ✅ Password-Reset Route (ohne React Router)
+  if (window.location.pathname === "/reset-password") {
+    return <ResetPasswordPage />;
   }
 
   // Anfangsbuchstabe für Profil-Button
