@@ -954,7 +954,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     onClick={handleLeaveGame}
     disabled={leaving}
     className="
-      absolute top-3 left-3 z-50
+      absolute top-1 left-1 z-50
       w-10 h-10
       flex items-center justify-center
       rounded-full
