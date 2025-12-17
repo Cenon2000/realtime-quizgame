@@ -978,10 +978,6 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         (Board {activeBoard}{activeBoard === 2 ? " • Punkte x2" : ""})
       </span>
     </h2>
-    <p className="text-xs text-slate-400">
-      Lobby: {lobby.name} • Du bist {selfPlayer.name}
-      {selfPlayer.is_host ? " (Host)" : ""}
-    </p>
   </div>
 </div>
 
