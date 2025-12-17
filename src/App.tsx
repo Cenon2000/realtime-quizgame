@@ -9,6 +9,7 @@ import GameBoardView from "./views/GameBoardView";
 import type { Lobby, LobbyPlayer } from "./types";
 import ResetPasswordPage from "./views/ResetPasswordPage";
 
+
 type View =
   | { name: "landing" }
   | { name: "createQuiz" }
@@ -31,25 +32,34 @@ function AuthBox({
   const [mode, setMode] = useState<"login" | "register">(initialMode);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
   const [username, setUsername] = useState("");
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-    setInfo(null);
-    setLoading(true);
+  setInfo(null);
+  setError(null);
+  setLoading(true);
 
-    try {
-      if (mode === "register") {
-        const { data, error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: {
-              username,
-            },
-          },
-        });
+  try {
+    if (mode === "register") {
+      if (password !== passwordConfirm) {
+        setError("Die Passwörter stimmen nicht überein.");
+        return;
+      }
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { username },
+          // optional später für Bestätigungsseite:
+          // emailRedirectTo: `${window.location.origin}/auth/confirmed`,
+        },
+      });
+
         if (error) throw error;
 
         // Profil anlegen (falls "profiles"-Tabelle existiert)
@@ -72,11 +82,37 @@ function AuthBox({
         if (onDone) onDone();
       }
     } catch (err: any) {
-      setInfo(err.message ?? "Fehler bei Anmeldung/Registrierung.");
+      setError(err.message ?? "Fehler bei Anmeldung/Registrierung.");
     } finally {
       setLoading(false);
     }
   };
+
+  const handleForgotPassword = async () => {
+  setInfo(null);
+  setError(null);
+  setLoading(true);
+
+  try {
+    if (!email.trim()) {
+      setError("Bitte gib zuerst deine E-Mail ein.");
+      return;
+    }
+
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
+
+    if (error) throw error;
+
+    setInfo("Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt.");
+  } catch (err: any) {
+    setError(err.message ?? "Fehler beim Zurücksetzen des Passworts.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     // Overlay über der ganzen App
@@ -148,6 +184,16 @@ function AuthBox({
           />
         </label>
 
+        <label className="flex flex-col text-xs gap-1">
+    Passwort wiederholen
+    <input
+      type="password"
+      className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
+      value={passwordConfirm}
+      onChange={(e) => setPasswordConfirm(e.target.value)}
+    />
+  </label>
+
         <button
           className="w-full mt-2 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-sm font-semibold disabled:opacity-60"
           disabled={loading}
@@ -160,15 +206,36 @@ function AuthBox({
             : "Einloggen"}
         </button>
 
+        {mode === "login" && (
+  <button
+    type="button"
+    onClick={handleForgotPassword}
+    disabled={loading}
+    className="w-full text-xs text-slate-300 hover:text-slate-100 underline disabled:opacity-60"
+  >
+    Passwort vergessen?
+  </button>
+)}
+
+
         {info && (
           <p className="text-xs text-slate-300 mt-1 text-center whitespace-pre-line">
             {info}
           </p>
         )}
+
+        {error && (
+  <p className="text-xs text-rose-300 mt-1 text-center whitespace-pre-line">
+    {error}
+  </p>
+)}
+
       </div>
     </div>
   );
 }
+
+
 
 /* ===========================
    STATISTIK-MODAL – liest NUR aus profiles
