@@ -9,7 +9,6 @@ import GameBoardView from "./views/GameBoardView";
 import type { Lobby, LobbyPlayer } from "./types";
 import ResetPasswordPage from "./views/ResetPasswordPage";
 
-
 type View =
   | { name: "landing" }
   | { name: "createQuiz" }
@@ -39,26 +38,26 @@ function AuthBox({
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async () => {
-  setInfo(null);
-  setError(null);
-  setLoading(true);
+    setInfo(null);
+    setError(null);
+    setLoading(true);
 
-  try {
-    if (mode === "register") {
-      if (password !== passwordConfirm) {
-        setError("Die Passwörter stimmen nicht überein.");
-        return;
-      }
+    try {
+      if (mode === "register") {
+        if (password !== passwordConfirm) {
+          setError("Die Passwörter stimmen nicht überein.");
+          return;
+        }
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: { username },
-          // optional später für Bestätigungsseite:
-          // emailRedirectTo: `${window.location.origin}/auth/confirmed`,
-        },
-      });
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: { username },
+            // optional später für Bestätigungsseite:
+            // emailRedirectTo: `${window.location.origin}/auth/confirmed`,
+          },
+        });
 
         if (error) throw error;
 
@@ -89,30 +88,34 @@ function AuthBox({
   };
 
   const handleForgotPassword = async () => {
-  setInfo(null);
-  setError(null);
-  setLoading(true);
+    setInfo(null);
+    setError(null);
+    setLoading(true);
 
-  try {
-    if (!email.trim()) {
-      setError("Bitte gib zuerst deine E-Mail ein.");
-      return;
+    try {
+      if (!email.trim()) {
+        setError("Bitte gib zuerst deine E-Mail ein.");
+        return;
+      }
+
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo: `${window.location.origin}/reset-password`,
+        }
+      );
+
+      if (error) throw error;
+
+      setInfo(
+        "Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt."
+      );
+    } catch (err: any) {
+      setError(err.message ?? "Fehler beim Zurücksetzen des Passworts.");
+    } finally {
+      setLoading(false);
     }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-      redirectTo: `${window.location.origin}/reset-password`,
-    });
-
-    if (error) throw error;
-
-    setInfo("Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt.");
-  } catch (err: any) {
-    setError(err.message ?? "Fehler beim Zurücksetzen des Passworts.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     // Overlay über der ganzen App
@@ -139,6 +142,7 @@ function AuthBox({
                 : "bg-slate-800 text-slate-300"
             }`}
             onClick={() => setMode("register")}
+            type="button"
           >
             Registrieren
           </button>
@@ -149,6 +153,7 @@ function AuthBox({
                 : "bg-slate-800 text-slate-300"
             }`}
             onClick={() => setMode("login")}
+            type="button"
           >
             Anmelden
           </button>
@@ -184,15 +189,18 @@ function AuthBox({
           />
         </label>
 
-        <label className="flex flex-col text-xs gap-1">
-    Passwort wiederholen
-    <input
-      type="password"
-      className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
-      value={passwordConfirm}
-      onChange={(e) => setPasswordConfirm(e.target.value)}
-    />
-  </label>
+        {/* ✅ NUR beim Registrieren Passwort bestätigen */}
+        {mode === "register" && (
+          <label className="flex flex-col text-xs gap-1">
+            Passwort wiederholen
+            <input
+              type="password"
+              className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+            />
+          </label>
+        )}
 
         <button
           className="w-full mt-2 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-sm font-semibold disabled:opacity-60"
@@ -206,17 +214,17 @@ function AuthBox({
             : "Einloggen"}
         </button>
 
+        {/* Passwort vergessen nur im Login */}
         {mode === "login" && (
-  <button
-    type="button"
-    onClick={handleForgotPassword}
-    disabled={loading}
-    className="w-full text-xs text-slate-300 hover:text-slate-100 underline disabled:opacity-60"
-  >
-    Passwort vergessen?
-  </button>
-)}
-
+          <button
+            type="button"
+            onClick={handleForgotPassword}
+            disabled={loading}
+            className="w-full text-xs text-slate-300 hover:text-slate-100 underline disabled:opacity-60"
+          >
+            Passwort vergessen?
+          </button>
+        )}
 
         {info && (
           <p className="text-xs text-slate-300 mt-1 text-center whitespace-pre-line">
@@ -225,17 +233,14 @@ function AuthBox({
         )}
 
         {error && (
-  <p className="text-xs text-rose-300 mt-1 text-center whitespace-pre-line">
-    {error}
-  </p>
-)}
-
+          <p className="text-xs text-rose-300 mt-1 text-center whitespace-pre-line">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );
 }
-
-
 
 /* ===========================
    STATISTIK-MODAL – liest NUR aus profiles
@@ -311,9 +316,7 @@ function StatsModal({
           <p className="text-xs text-slate-300 text-center">Lade...</p>
         )}
 
-        {error && (
-          <p className="text-xs text-rose-300 text-center">{error}</p>
-        )}
+        {error && <p className="text-xs text-rose-300 text-center">{error}</p>}
 
         {!loading && !error && stats && (
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -337,17 +340,13 @@ function StatsModal({
               <span className="text-[11px] text-slate-400">
                 Antworten richtig
               </span>
-              <span className="text-lg font-mono">
-                {stats.questionsCorrect}
-              </span>
+              <span className="text-lg font-mono">{stats.questionsCorrect}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
               <span className="text-[11px] text-slate-400">
                 Antworten falsch
               </span>
-              <span className="text-lg font-mono">
-                {stats.questionsWrong}
-              </span>
+              <span className="text-lg font-mono">{stats.questionsWrong}</span>
             </div>
           </div>
         )}
@@ -371,7 +370,9 @@ function App() {
 
   // Profil-Menü + Modals
   const [profileOpen, setProfileOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(null);
+  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(
+    null
+  );
   const [showStats, setShowStats] = useState(false);
 
   // Supabase-User laden
@@ -400,7 +401,7 @@ function App() {
     );
   }
 
-    // ✅ Password-Reset Route (ohne React Router)
+  // ✅ Password-Reset Route (ohne React Router)
   if (window.location.pathname === "/reset-password") {
     return <ResetPasswordPage />;
   }
@@ -414,13 +415,10 @@ function App() {
       <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
         {/* Titel */}
         {view.name !== "game" && (
-  <div className="flex items-center justify-center mb-4">
-    <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300">
-      
-    </div>
-  </div>
-)}
-
+          <div className="flex items-center justify-center mb-4">
+            <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300"></div>
+          </div>
+        )}
 
         {/* Haupt-Views */}
         {view.name === "landing" && (
@@ -464,81 +462,81 @@ function App() {
       </div>
 
       {/* Profil-Button (innen, oben rechts) */}
-    {view.name !== "game" && (
-      <div className="absolute top-3 right-4 z-40">
-        <div className="relative">
-          <button
-            onClick={() => setProfileOpen((v) => !v)}
-            className="
-              w-10 h-10 rounded-full
-              bg-slate-800 border border-slate-600
-              flex items-center justify-center
-              text-sm font-semibold text-slate-100
-              hover:bg-slate-700
-            "
-          >
-            {profileInitial}
-          </button>
-
-          {profileOpen && (
-            <div
+      {view.name !== "game" && (
+        <div className="absolute top-3 right-4 z-40">
+          <div className="relative">
+            <button
+              onClick={() => setProfileOpen((v) => !v)}
               className="
-                absolute right-0 mt-2
-                w-40 bg-slate-900 border border-slate-700
-                rounded-xl shadow-lg p-2
-                flex flex-col gap-1 text-xs
+                w-10 h-10 rounded-full
+                bg-slate-800 border border-slate-600
+                flex items-center justify-center
+                text-sm font-semibold text-slate-100
+                hover:bg-slate-700
               "
             >
-              {!authUser ? (
-                <>
-                  <button
-                    onClick={() => {
-                      setAuthModalMode("login");
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Login
-                  </button>
-                  <button
-                    onClick={() => {
-                      setAuthModalMode("register");
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Create Account
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    onClick={() => {
-                      setShowStats(true);
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
-                  >
-                    Statistiken
-                  </button>
-                  <button
-                    onClick={async () => {
-                      await supabase.auth.signOut();
-                      setShowStats(false);
-                      setAuthModalMode(null);
-                      setProfileOpen(false);
-                    }}
-                    className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
-                  >
-                    Logout
-                  </button>
-                </>
-              )}
-            </div>
-          )}
+              {profileInitial}
+            </button>
+
+            {profileOpen && (
+              <div
+                className="
+                  absolute right-0 mt-2
+                  w-40 bg-slate-900 border border-slate-700
+                  rounded-xl shadow-lg p-2
+                  flex flex-col gap-1 text-xs
+                "
+              >
+                {!authUser ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setAuthModalMode("login");
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                    >
+                      Login
+                    </button>
+                    <button
+                      onClick={() => {
+                        setAuthModalMode("register");
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                    >
+                      Create Account
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => {
+                        setShowStats(true);
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                    >
+                      Statistiken
+                    </button>
+                    <button
+                      onClick={async () => {
+                        await supabase.auth.signOut();
+                        setShowStats(false);
+                        setAuthModalMode(null);
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
+                    >
+                      Logout
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-    )}
+      )}
 
       {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
