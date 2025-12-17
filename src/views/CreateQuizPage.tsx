@@ -21,7 +21,7 @@ type Props = {
 };
 
 type QuestionForm = {
-  points: number; // Basis-Punkte (Board2 wird beim Speichern *2)
+  points: number; // ✅ IMMER Basis-Punkte (100/200/300/500) – auch für Board 2!
   question: string;
   answer: string;
   question_type: "text" | "image";
@@ -172,18 +172,17 @@ export default function CreateQuizPage({ onBack }: Props) {
 
       // Helper: speichert 1 Board (board=1 oder 2)
       const saveBoard = async (board: 1 | 2, cats: CategoryForm[], catCount: number) => {
-        const multiplier = board === 2 ? 2 : 1;
-
         for (let i = 0; i < catCount; i++) {
           const catForm = cats[i];
 
+          // ✅ Kategorie speichern mit board = 1 oder 2
           const { data: catData, error: catError } = await supabase
             .from("quiz_categories")
             .insert({
               quiz_id: quizData.id,
               name: catForm.name.trim() || `Kategorie ${i + 1}`,
               position: i,
-              board: 1, // ✅ wichtig
+              board: board, // ✅ FIX: hier muss board rein (nicht catData.board)
             })
             .select()
             .single();
@@ -197,8 +196,10 @@ export default function CreateQuizPage({ onBack }: Props) {
 
             if (q.question_type === "image") {
               if (!q.imageFile) {
+                // Anzeige im Editor: Board2 zeigt x2 in der UI, aber gespeichert wird Basis
+                const shownPts = board === 2 ? q.points * 2 : q.points;
                 throw new Error(
-                  `In Board ${board} / "${catForm.name}" bei ${q.points * multiplier} Punkten fehlt ein Bild.`
+                  `In Board ${board} / "${catForm.name}" bei ${shownPts} Punkten fehlt ein Bild.`
                 );
               }
               imagePath = await uploadQuestionImage(q.imageFile, quizData.id);
@@ -206,14 +207,14 @@ export default function CreateQuizPage({ onBack }: Props) {
 
             questionsPayload.push({
               category_id: catData.id,
-              points: q.points * multiplier, // ✅ Board2 speichert doppelte Punkte
+              points: q.points, // ✅ IMMER Basis-Punkte speichern!
               question:
                 q.question.trim() ||
-                (q.question_type === "image" ? "" : `Frage für ${q.points * multiplier} Punkte`),
+                (q.question_type === "image" ? "" : `Frage für ${q.points} Punkte`),
               answer: q.answer.trim() || "Antwort",
               question_type: q.question_type,
               image_path: imagePath,
-              board: 1, // ✅ wichtig (falls du auch in quiz_questions ein board hast)
+              board: board, // ✅ FIX: board sauber setzen
             });
           }
 
@@ -355,7 +356,9 @@ export default function CreateQuizPage({ onBack }: Props) {
           <div className="text-xs text-slate-300 mb-2">
             Du bearbeitest:{" "}
             <span className="font-semibold text-indigo-300">
-              {activeBoardEditor === 1 ? "Board 1" : "Board 2 (Punkte x2 werden beim Speichern gesetzt)"}
+              {activeBoardEditor === 1
+                ? "Board 1"
+                : "Board 2 (Punkte x2 werden im Spiel berechnet)"}
             </span>
           </div>
 
