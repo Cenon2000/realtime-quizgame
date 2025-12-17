@@ -947,14 +947,14 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   const basePointsList = [100, 200, 300, 500];
 
   return (
-    <div className="relative flex flex-col gap-4 min-h-[80vh] pb-4">
+    <div className="relative flex flex-col gap-4 min-h-[80vh]">
       {/* Titel + Verlassen-Button */}
 <div className="px-4 mt-2">
   <button
     onClick={handleLeaveGame}
     disabled={leaving}
     className="
-      absolute top-0.2 left-0.2 z-50
+      absolute top-4 left-4 z-50
       w-10 h-10
       flex items-center justify-center
       rounded-full
