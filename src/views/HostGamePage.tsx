@@ -16,6 +16,22 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
   const [quizId, setQuizId] = useState<string | null>(null);
   const [lobbyName, setLobbyName] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(3); // Anzahl Spieler OHNE Host
+
+  const [maxPlayersInput, setMaxPlayersInput] = useState("3"); // fürs Tippen (mobil)
+
+function clampPlayers(n: number) {
+  return Math.min(12, Math.max(1, n));
+}
+
+function commitMaxPlayers(raw: string) {
+  // raw darf kurz leer sein (während man tippt)
+  const n = raw.trim() === "" ? maxPlayers : Number(raw);
+  const clamped = clampPlayers(Number.isFinite(n) ? n : maxPlayers);
+  setMaxPlayers(clamped);
+  setMaxPlayersInput(String(clamped));
+}
+
+
   const [hostName, setHostName] = useState("Host");
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
@@ -134,18 +150,57 @@ export default function HostGamePage({ onBack, onLobbyReady }: Props) {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-            Anzahl Spieler (ohne Host)
-            <input
-              type="number"
-              min={1}
-              max={12}
-              className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-              value={maxPlayers}
-              onChange={(e) =>
-                setMaxPlayers(Math.max(1, Number(e.target.value) || 1))
-              }
-            />
-          </label>
+  Anzahl Spieler (ohne Host)
+
+  <div className="flex items-center gap-2">
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+      onClick={() => {
+        const next = clampPlayers(maxPlayers - 1);
+        setMaxPlayers(next);
+        setMaxPlayersInput(String(next));
+      }}
+      disabled={maxPlayers <= 1}
+      aria-label="Spieleranzahl verringern"
+      title="Verringern"
+    >
+      −
+    </button>
+
+    <input
+      // bewusst kein type="number" (mobil fehlen oft die Pfeile / buggy)
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      className="w-24 text-center px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+      value={maxPlayersInput}
+      onChange={(e) => {
+        // nur Ziffern erlauben, aber Leerstring zulassen
+        const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+        setMaxPlayersInput(onlyDigits);
+      }}
+      onBlur={() => commitMaxPlayers(maxPlayersInput)}
+      placeholder="1–12"
+    />
+
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+      onClick={() => {
+        const next = clampPlayers(maxPlayers + 1);
+        setMaxPlayers(next);
+        setMaxPlayersInput(String(next));
+      }}
+      disabled={maxPlayers >= 12}
+      aria-label="Spieleranzahl erhöhen"
+      title="Erhöhen"
+    >
+      +
+    </button>
+  </div>
+</label>
+
 
           <label className="flex flex-col gap-1 text-sm">
             Dein Name (Host)
