@@ -968,7 +968,8 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     aria-label="Spiel verlassen"
     title="Spiel verlassen"
   >
-    <span className="text-2xl font-black">←</span>
+    <span className="text-2xl font-bold -translate-y-[1px]">←</span>
+
 
   </button>
 
