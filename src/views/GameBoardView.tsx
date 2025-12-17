@@ -950,37 +950,20 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     <div className="relative flex flex-col gap-4 min-h-[80vh] pb-4">
       {/* Titel + Verlassen-Button */}
       <div className="flex items-center justify-center gap-3 px-4 mt-2">
-        <button
-          onClick={handleLeaveGame}
-          disabled={leaving}
-          className="
-            w-10 h-10
-            flex items-center justify-center
-            rounded-full
-            bg-slate-800
-            border border-slate-600
-            text-lg
-            text-slate-100
-            hover:bg-slate-700
-            disabled:opacity-50
-          "
-        >
-          ←
-        </button>
+  <div className="text-center">
+    <h2 className="text-2xl md:text-3xl font-bold">
+      {quiz?.name ?? "Quiz"}{" "}
+      <span className="text-xs text-slate-400">
+        (Board {activeBoard}{activeBoard === 2 ? " • Punkte x2" : ""})
+      </span>
+    </h2>
+    <p className="text-xs text-slate-400">
+      Lobby: {lobby.name} • Du bist {selfPlayer.name}
+      {selfPlayer.is_host ? " (Host)" : ""}
+    </p>
+  </div>
+</div>
 
-        <div className="text-center">
-          <h2 className="text-2xl md:text-3xl font-bold">
-            {quiz?.name ?? "Quiz"}{" "}
-            <span className="text-xs text-slate-400">
-              (Board {activeBoard}{activeBoard === 2 ? " • Punkte x2" : ""})
-            </span>
-          </h2>
-          <p className="text-xs text-slate-400">
-            Lobby: {lobby.name} • Du bist {selfPlayer.name}
-            {selfPlayer.is_host ? " (Host)" : ""}
-          </p>
-        </div>
-      </div>
 
       {/* GAME OVER */}
       {isGameOver && (
@@ -1038,43 +1021,70 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       )}
 
       {/* Board */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="w-full max-w-3xl px-2">
-          <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-            {gridCategories.map((cat: any) => (
-              <div key={cat.id} className="flex flex-col gap-2">
-                <CategoryTitle name={cat.name} />
+<div className="flex-1 flex items-center justify-center">
+  {/* hellgrauer Bereich */}
+  <div className="relative w-full max-w-3xl px-2 bg-slate-200 rounded-2xl border border-slate-300 shadow-sm">
+    {/* Leave-Button: immer links oben im hellgrauen Bereich */}
+    <button
+      onClick={handleLeaveGame}
+      disabled={leaving}
+      className="
+        absolute top-3 left-3 z-50
+        w-10 h-10
+        flex items-center justify-center
+        rounded-full
+        bg-slate-800
+        border border-slate-600
+        text-lg
+        text-slate-100
+        hover:bg-slate-700
+        disabled:opacity-50
+      "
+      aria-label="Spiel verlassen"
+      title="Spiel verlassen"
+    >
+      ←
+    </button>
 
-                {basePointsList.map((basePts) => {
-                  const q: any = questionMap[cat.id]?.find(
-                    (qq: any) => qq.points === basePts
-                  );
-                  if (!q) return <div key={basePts} className="h-10 md:h-16" />;
+    {/* Abstand, damit Grid nicht unter dem Button liegt */}
+    <div className="pt-14 pb-4">
+      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+        {gridCategories.map((cat: any) => (
+          <div key={cat.id} className="flex flex-col gap-2">
+            <CategoryTitle name={cat.name} />
 
-                  const used = usageMap.get(q.id);
-                  const disabled = used || !isHost;
+            {basePointsList.map((basePts) => {
+              const q: any = questionMap[cat.id]?.find(
+                (qq: any) => qq.points === basePts
+              );
+              if (!q) return <div key={basePts} className="h-10 md:h-16" />;
 
-                  return (
-                    <button
-                      key={q.id}
-                      disabled={disabled}
-                      onClick={!disabled && isHost ? () => handleSelectQuestion(q) : undefined}
-                      className={`h-10 md:h-16 rounded-lg text-sm md:text-lg font-bold border border-slate-700 flex items-center justify-center transition
-                        ${
-                          used
-                            ? "bg-slate-800 text-slate-500 line-through cursor-not-allowed"
-                            : "bg-indigo-500 hover:bg-indigo-600 text-white"
-                        }`}
-                    >
-                      {basePts * pointsMultiplier}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+              const used = usageMap.get(q.id);
+              const disabled = used || !isHost;
+
+              return (
+                <button
+                  key={q.id}
+                  disabled={disabled}
+                  onClick={!disabled && isHost ? () => handleSelectQuestion(q) : undefined}
+                  className={`h-10 md:h-16 rounded-lg text-sm md:text-lg font-bold border border-slate-700 flex items-center justify-center transition
+                    ${
+                      used
+                        ? "bg-slate-800 text-slate-500 line-through cursor-not-allowed"
+                        : "bg-indigo-500 hover:bg-indigo-600 text-white"
+                    }`}
+                >
+                  {basePts * pointsMultiplier}
+                </button>
+              );
+            })}
           </div>
-        </div>
+        ))}
       </div>
+    </div>
+  </div>
+</div>
+
 
       {/* Spielerleiste */}
       <div className="mt-3 w-full pb-2">
