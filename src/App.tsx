@@ -98,18 +98,13 @@ function AuthBox({
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      );
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
       if (error) throw error;
 
-      setInfo(
-        "Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt."
-      );
+      setInfo("Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt.");
     } catch (err: any) {
       setError(err.message ?? "Fehler beim Zurücksetzen des Passworts.");
     } finally {
@@ -118,10 +113,8 @@ function AuthBox({
   };
 
   return (
-    // Overlay über der ganzen App
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-sm p-5 space-y-3 shadow-2xl">
-        {/* schließen */}
         <button
           onClick={onDone}
           className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
@@ -133,7 +126,6 @@ function AuthBox({
           {mode === "register" ? "Account erstellen" : "Anmelden"}
         </h2>
 
-        {/* Modus wählen */}
         <div className="flex justify-center gap-2 text-xs mb-1">
           <button
             className={`px-3 py-1 rounded-full ${
@@ -268,12 +260,9 @@ function StatsModal({
       setLoading(true);
       setError(null);
 
-      // 🔍 Stats direkt aus der profiles-Tabelle lesen
       const { data, error: profileError } = await supabase
         .from("profiles")
-        .select(
-          "total_points, questions_correct, questions_wrong, games_played, games_won"
-        )
+        .select("total_points, questions_correct, questions_wrong, games_played, games_won")
         .eq("id", userId)
         .single();
 
@@ -308,14 +297,9 @@ function StatsModal({
           ✕
         </button>
 
-        <h2 className="text-xl font-semibold text-center mb-2">
-          Deine Statistiken
-        </h2>
+        <h2 className="text-xl font-semibold text-center mb-2">Deine Statistiken</h2>
 
-        {loading && (
-          <p className="text-xs text-slate-300 text-center">Lade...</p>
-        )}
-
+        {loading && <p className="text-xs text-slate-300 text-center">Lade...</p>}
         {error && <p className="text-xs text-rose-300 text-center">{error}</p>}
 
         {!loading && !error && stats && (
@@ -325,31 +309,125 @@ function StatsModal({
               <span className="text-lg font-mono">{stats.totalPoints}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
-              <span className="text-[11px] text-slate-400">
-                Runden gespielt
-              </span>
+              <span className="text-[11px] text-slate-400">Runden gespielt</span>
               <span className="text-lg font-mono">{stats.gamesPlayed}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
-              <span className="text-[11px] text-slate-400">
-                Runden gewonnen
-              </span>
+              <span className="text-[11px] text-slate-400">Runden gewonnen</span>
               <span className="text-lg font-mono">{stats.gamesWon}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
-              <span className="text-[11px] text-slate-400">
-                Antworten richtig
-              </span>
+              <span className="text-[11px] text-slate-400">Antworten richtig</span>
               <span className="text-lg font-mono">{stats.questionsCorrect}</span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
-              <span className="text-[11px] text-slate-400">
-                Antworten falsch
-              </span>
+              <span className="text-[11px] text-slate-400">Antworten falsch</span>
               <span className="text-lg font-mono">{stats.questionsWrong}</span>
             </div>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   SETTINGS MODAL – username ändern
+   =========================== */
+
+function SettingsModal({
+  userId,
+  currentUsername,
+  onClose,
+  onSaved,
+}: {
+  userId: string;
+  currentUsername: string;
+  onClose: () => void;
+  onSaved: (newUsername: string) => void;
+}) {
+  const [username, setUsername] = useState(currentUsername);
+  const [loading, setLoading] = useState(false);
+  const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSave = async () => {
+    setInfo(null);
+    setError(null);
+    setLoading(true);
+
+    try {
+      const next = username.trim();
+
+      if (!next) {
+        setError("Bitte gib einen Namen ein.");
+        return;
+      }
+      if (next.length < 2) {
+        setError("Der Name ist zu kurz.");
+        return;
+      }
+      if (next.length > 20) {
+        setError("Der Name ist zu lang (max. 20 Zeichen).");
+        return;
+      }
+
+      const { error: profileErr } = await supabase
+        .from("profiles")
+        .update({ username: next })
+        .eq("id", userId);
+
+      if (profileErr) throw profileErr;
+
+      const { error: authErr } = await supabase.auth.updateUser({
+        data: { username: next },
+      });
+
+      if (authErr) {
+        console.warn("Konnte auth metadata nicht updaten:", authErr.message);
+      }
+
+      setInfo("Name gespeichert.");
+      onSaved(next);
+    } catch (e: any) {
+      setError(e?.message ?? "Fehler beim Speichern.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-md p-6 space-y-4 shadow-2xl">
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
+        >
+          ✕
+        </button>
+
+        <h2 className="text-xl font-semibold text-center">Einstellungen</h2>
+
+        <label className="flex flex-col text-xs gap-1">
+          Anzeigename
+          <input
+            className="px-3 py-2 rounded-lg bg-slate-800 border border-slate-600 text-sm text-slate-100"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+            disabled={loading}
+          />
+        </label>
+
+        {error && <p className="text-xs text-rose-300 text-center">{error}</p>}
+        {info && <p className="text-xs text-emerald-300 text-center">{info}</p>}
+
+        <button
+          onClick={handleSave}
+          disabled={loading}
+          className="w-full px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-900 font-semibold disabled:opacity-60"
+        >
+          {loading ? "Speichere..." : "Speichern"}
+        </button>
       </div>
     </div>
   );
@@ -362,30 +440,54 @@ function StatsModal({
 function App() {
   const [view, setView] = useState<View>({ name: "landing" });
 
-  // Auth-Status
-  const [authUser, setAuthUser] = useState<
-    null | { id: string; email?: string | null }
-  >(null);
+  const [authUser, setAuthUser] = useState<null | { id: string; email?: string | null }>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Profil-Menü + Modals
   const [profileOpen, setProfileOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(
-    null
-  );
+  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(null);
   const [showStats, setShowStats] = useState(false);
 
-  // Supabase-User laden
+  const [showSettings, setShowSettings] = useState(false);
+  const [profileUsername, setProfileUsername] = useState<string>("");
+
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
-      setAuthUser(data.user ?? null);
+      const user = data.user ?? null;
+      setAuthUser(user);
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", user.id)
+          .single();
+
+        setProfileUsername(profile?.username ?? "");
+      } else {
+        setProfileUsername("");
+      }
+
       setAuthLoading(false);
     };
+
     init();
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setAuthUser(session?.user ?? null);
+    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null;
+      setAuthUser(user);
+
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("username")
+          .eq("id", user.id)
+          .single();
+
+        setProfileUsername(profile?.username ?? "");
+      } else {
+        setProfileUsername("");
+      }
     });
 
     return () => {
@@ -401,26 +503,21 @@ function App() {
     );
   }
 
-  // ✅ Password-Reset Route (ohne React Router)
   if (window.location.pathname === "/reset-password") {
     return <ResetPasswordPage />;
   }
 
-  // Anfangsbuchstabe für Profil-Button
   const profileInitial = authUser?.email?.[0]?.toUpperCase() ?? "P";
 
   return (
     <div className="min-h-screen bg-slate-900 flex relative">
-      {/* Haupt-Container */}
       <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
-        {/* Titel */}
         {view.name !== "game" && (
           <div className="flex items-center justify-center mb-4">
             <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300"></div>
           </div>
         )}
 
-        {/* Haupt-Views */}
         {view.name === "landing" && (
           <LandingPage
             onCreateQuiz={() => setView({ name: "createQuiz" })}
@@ -461,7 +558,6 @@ function App() {
         )}
       </div>
 
-      {/* Profil-Button (innen, oben rechts) */}
       {view.name !== "game" && (
         <div className="absolute top-3 right-4 z-40">
           <div className="relative">
@@ -519,12 +615,25 @@ function App() {
                     >
                       Statistiken
                     </button>
+
+                    <button
+                      onClick={() => {
+                        setShowSettings(true);
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                    >
+                      Einstellungen
+                    </button>
+
                     <button
                       onClick={async () => {
                         await supabase.auth.signOut();
                         setShowStats(false);
+                        setShowSettings(false);
                         setAuthModalMode(null);
                         setProfileOpen(false);
+                        setProfileUsername("");
                       }}
                       className="w-full px-2 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-left"
                     >
@@ -538,17 +647,24 @@ function App() {
         </div>
       )}
 
-      {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
-        <AuthBox
-          initialMode={authModalMode}
-          onDone={() => setAuthModalMode(null)}
-        />
+        <AuthBox initialMode={authModalMode} onDone={() => setAuthModalMode(null)} />
       )}
 
-      {/* STATISTIK-MODAL */}
       {showStats && authUser && (
         <StatsModal userId={authUser.id} onClose={() => setShowStats(false)} />
+      )}
+
+      {showSettings && authUser && (
+        <SettingsModal
+          userId={authUser.id}
+          currentUsername={profileUsername}
+          onClose={() => setShowSettings(false)}
+          onSaved={(newName) => {
+            setProfileUsername(newName);
+            setShowSettings(false);
+          }}
+        />
       )}
     </div>
   );
