@@ -1,3 +1,5 @@
+import logo from "../public/vite.svg";
+
 type Props = {
   onCreateQuiz: () => void;
   onHostGame: () => void;
@@ -10,7 +12,15 @@ export default function LandingPage({
   onJoinGame,
 }: Props) {
   return (
+    
     <div className="flex flex-col gap-8 items-center">
+      <img
+  src={logo}
+  alt="Quiz Abend Logo"
+  className="mx-auto mb-4 w-16 h-16 sm:w-20 sm:h-20 md:w-24 md:h-24"
+  style={{ objectFit: "contain" }}
+/>
+
       <h1 className="text-3xl md:text-4xl font-bold text-center">
         Quiz Abend
       </h1>
