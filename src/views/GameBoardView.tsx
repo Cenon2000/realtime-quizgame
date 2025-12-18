@@ -680,21 +680,39 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   };
 
   const handleHostCorrect = async () => {
-    if (!isHost || !gameState || !currentQuestion) return;
+  if (!isHost || !gameState || !currentQuestion) return;
 
-    const basePoints = (currentQuestion as any).points ?? 0;
-    const points = basePoints * pointsMultiplier;
+  const basePoints = (currentQuestion as any).points ?? 0;
 
-    const targetPlayer = activeAnsweringPlayer ?? currentPlayer;
-    if (!targetPlayer) return;
+  // Punkte wie im Spiel angezeigt (Board2 = x2)
+  const shownPoints = basePoints * pointsMultiplier;
 
-    await changeScore(targetPlayer.id, points);
-    await markQuestionUsed((currentQuestion as any).id);
-    await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
-    setBuzzers([]);
-    await logAnswerEvent(targetPlayer, true, points, (currentQuestion as any).id);
-    await goToNextPlayer();
-  };
+  const targetPlayer = activeAnsweringPlayer ?? currentPlayer;
+  if (!targetPlayer) return;
+
+  // ✅ Wenn NICHT der aktuelle Spieler antwortet, dann kommt er vom Buzzer → nur halbe Punkte
+  const isBuzzerAnswer =
+    !!activeAnsweringPlayer &&
+    !!currentPlayer &&
+    activeAnsweringPlayer.id !== currentPlayer.id;
+
+  const awardedPoints = isBuzzerAnswer ? Math.floor(shownPoints / 2) : shownPoints;
+
+  await changeScore(targetPlayer.id, awardedPoints);
+  await markQuestionUsed((currentQuestion as any).id);
+  await supabase.from("buzzes").delete().eq("lobby_id", lobby.id);
+  setBuzzers([]);
+
+  await logAnswerEvent(
+    targetPlayer,
+    true,
+    awardedPoints,
+    (currentQuestion as any).id
+  );
+
+  await goToNextPlayer();
+};
+
 
   const handleHostWrong = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
