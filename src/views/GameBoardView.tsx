@@ -1188,7 +1188,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                       Buzzer-Reihenfolge
                     </div>
                     {buzzers.length === 0 && (
-                      <div className="text-slate-400">Noch niemand gebuzzert.</div>
+                      <div className="text-slate-400">Keine Buzzes.</div>
                     )}
                     {buzzers.map((p, i) => (
                       <button
@@ -1212,8 +1212,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
             {!isHost && (
               <div className="flex flex-col items-center gap-3 w-full">
                 <p className="text-xs text-slate-400 text-center px-2">
-                  Warte auf die Entscheidung des Hosts. Wenn die Frage in die
-                  Buzzer-Phase geht, kannst du buzzern.
+                  Warten auf Hosts. Buzzer wird Freigegeben...
                   {currentPlayer && selfPlayer.id === currentPlayer.id && (
                     <> (Du bist gerade an der Reihe und kannst nicht buzzern.)</>
                   )}
