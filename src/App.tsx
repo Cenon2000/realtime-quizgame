@@ -451,49 +451,73 @@ function App() {
   const [profileUsername, setProfileUsername] = useState<string>("");
 
   useEffect(() => {
-    const init = async () => {
-      const { data } = await supabase.auth.getUser();
+  let alive = true;
+
+  const init = async () => {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) console.warn("getUser error:", error.message);
+
       const user = data.user ?? null;
+      if (!alive) return;
+
       setAuthUser(user);
 
       if (user) {
-        const { data: profile } = await supabase
+        const { data: profile, error: pErr } = await supabase
           .from("profiles")
           .select("username")
           .eq("id", user.id)
           .single();
 
+        if (pErr) console.warn("profile load error:", pErr.message);
+
+        if (!alive) return;
         setProfileUsername(profile?.username ?? "");
       } else {
         setProfileUsername("");
       }
-
+    } catch (e) {
+      console.error("Auth init crashed:", e);
+      if (!alive) return;
+      setAuthUser(null);
+      setProfileUsername("");
+    } finally {
+      if (!alive) return;
       setAuthLoading(false);
-    };
+    }
+  };
 
-    init();
+  init();
 
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      const user = session?.user ?? null;
-      setAuthUser(user);
+  const { data: sub } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    const user = session?.user ?? null;
+    if (!alive) return;
 
-      if (user) {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", user.id)
-          .single();
+    setAuthUser(user);
 
-        setProfileUsername(profile?.username ?? "");
-      } else {
-        setProfileUsername("");
-      }
-    });
+    if (user) {
+      const { data: profile, error: pErr } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", user.id)
+        .single();
 
-    return () => {
-      sub.subscription.unsubscribe();
-    };
-  }, []);
+      if (pErr) console.warn("profile load error:", pErr.message);
+
+      if (!alive) return;
+      setProfileUsername(profile?.username ?? "");
+    } else {
+      setProfileUsername("");
+    }
+  });
+
+  return () => {
+    alive = false;
+    sub.subscription.unsubscribe();
+  };
+}, []);
+
 
   if (authLoading) {
     return (
