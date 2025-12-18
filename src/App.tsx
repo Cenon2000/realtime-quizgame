@@ -98,18 +98,13 @@ function AuthBox({
         return;
       }
 
-      const { error } = await supabase.auth.resetPasswordForEmail(
-        email.trim(),
-        {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }
-      );
+      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
 
       if (error) throw error;
 
-      setInfo(
-        "Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt."
-      );
+      setInfo("Wir haben dir eine E-Mail zum Zurücksetzen des Passworts geschickt.");
     } catch (err: any) {
       setError(err.message ?? "Fehler beim Zurücksetzen des Passworts.");
     } finally {
@@ -118,10 +113,8 @@ function AuthBox({
   };
 
   return (
-    // Overlay über der ganzen App
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
       <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-sm p-5 space-y-3 shadow-2xl">
-        {/* schließen */}
         <button
           onClick={onDone}
           className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
@@ -133,7 +126,6 @@ function AuthBox({
           {mode === "register" ? "Account erstellen" : "Anmelden"}
         </h2>
 
-        {/* Modus wählen */}
         <div className="flex justify-center gap-2 text-xs mb-1">
           <button
             className={`px-3 py-1 rounded-full ${
@@ -189,7 +181,6 @@ function AuthBox({
           />
         </label>
 
-        {/* ✅ NUR beim Registrieren Passwort bestätigen */}
         {mode === "register" && (
           <label className="flex flex-col text-xs gap-1">
             Passwort wiederholen
@@ -214,7 +205,6 @@ function AuthBox({
             : "Einloggen"}
         </button>
 
-        {/* Passwort vergessen nur im Login */}
         {mode === "login" && (
           <button
             type="button"
@@ -268,7 +258,6 @@ function StatsModal({
       setLoading(true);
       setError(null);
 
-      // 🔍 Stats direkt aus der profiles-Tabelle lesen
       const { data, error: profileError } = await supabase
         .from("profiles")
         .select(
@@ -316,7 +305,9 @@ function StatsModal({
           <p className="text-xs text-slate-300 text-center">Lade...</p>
         )}
 
-        {error && <p className="text-xs text-rose-300 text-center">{error}</p>}
+        {error && (
+          <p className="text-xs text-rose-300 text-center">{error}</p>
+        )}
 
         {!loading && !error && stats && (
           <div className="grid grid-cols-2 gap-3 text-sm">
@@ -340,15 +331,158 @@ function StatsModal({
               <span className="text-[11px] text-slate-400">
                 Antworten richtig
               </span>
-              <span className="text-lg font-mono">{stats.questionsCorrect}</span>
+              <span className="text-lg font-mono">
+                {stats.questionsCorrect}
+              </span>
             </div>
             <div className="bg-slate-800/80 rounded-xl p-3 flex flex-col items-start">
               <span className="text-[11px] text-slate-400">
                 Antworten falsch
               </span>
-              <span className="text-lg font-mono">{stats.questionsWrong}</span>
+              <span className="text-lg font-mono">
+                {stats.questionsWrong}
+              </span>
             </div>
           </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ===========================
+   SETTINGS MODAL – Username ändern
+   =========================== */
+
+function SettingsModal({
+  userId,
+  onClose,
+}: {
+  userId: string;
+  onClose: () => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [username, setUsername] = useState("");
+  const [info, setInfo] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+
+    const load = async () => {
+      setLoading(true);
+      setError(null);
+      setInfo(null);
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("username")
+        .eq("id", userId)
+        .single();
+
+      if (!active) return;
+
+      if (error) {
+        setError(error.message ?? "Fehler beim Laden des Usernamens.");
+        setLoading(false);
+        return;
+      }
+
+      setUsername(data?.username ?? "");
+      setLoading(false);
+    };
+
+    load();
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setError(null);
+    setInfo(null);
+
+    try {
+      const next = username.trim();
+      if (!next) {
+        setError("Bitte gib einen gültigen Username ein.");
+        return;
+      }
+
+      // 1) profiles.username aktualisieren
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ username: next })
+        .eq("id", userId);
+
+      if (profileError) throw profileError;
+
+      // 2) optional: auth metadata mitziehen (damit es konsistent bleibt)
+      const { error: metaError } = await supabase.auth.updateUser({
+        data: { username: next },
+      });
+
+      if (metaError) {
+        // Nicht fatal: Spiel-Funktionen sollen nicht brechen
+        console.warn("Konnte auth metadata nicht updaten:", metaError.message);
+      }
+
+      setInfo("Username gespeichert.");
+    } catch (e: any) {
+      setError(e?.message ?? "Fehler beim Speichern.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="relative bg-slate-900 border border-slate-700 rounded-2xl w-[90%] max-w-sm p-5 space-y-3 shadow-2xl">
+        <button
+          onClick={onClose}
+          className="absolute -top-3 -right-3 w-7 h-7 rounded-full bg-slate-800 border border-slate-600 text-xs flex items-center justify-center hover:bg-slate-700"
+        >
+          ✕
+        </button>
+
+        <h2 className="text-lg font-semibold text-center mb-1">Einstellungen</h2>
+
+        {loading ? (
+          <p className="text-xs text-slate-300 text-center">Lade...</p>
+        ) : (
+          <>
+            <label className="flex flex-col text-xs gap-1">
+              Username
+              <input
+                className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </label>
+
+            <button
+              className="w-full mt-2 px-3 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-sm font-semibold disabled:opacity-60"
+              disabled={saving}
+              onClick={handleSave}
+            >
+              {saving ? "Speichere..." : "Speichern"}
+            </button>
+
+            {info && (
+              <p className="text-xs text-emerald-300 mt-1 text-center whitespace-pre-line">
+                {info}
+              </p>
+            )}
+
+            {error && (
+              <p className="text-xs text-rose-300 mt-1 text-center whitespace-pre-line">
+                {error}
+              </p>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -362,20 +496,16 @@ function StatsModal({
 function App() {
   const [view, setView] = useState<View>({ name: "landing" });
 
-  // Auth-Status
-  const [authUser, setAuthUser] = useState<
-    null | { id: string; email?: string | null }
-  >(null);
+  const [authUser, setAuthUser] = useState<null | { id: string; email?: string | null }>(null);
   const [authLoading, setAuthLoading] = useState(true);
 
-  // Profil-Menü + Modals
   const [profileOpen, setProfileOpen] = useState(false);
-  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(
-    null
-  );
+  const [authModalMode, setAuthModalMode] = useState<null | "login" | "register">(null);
   const [showStats, setShowStats] = useState(false);
 
-  // Supabase-User laden
+  // ✅ NEU: Settings Modal
+  const [showSettings, setShowSettings] = useState(false);
+
   useEffect(() => {
     const init = async () => {
       const { data } = await supabase.auth.getUser();
@@ -406,21 +536,17 @@ function App() {
     return <ResetPasswordPage />;
   }
 
-  // Anfangsbuchstabe für Profil-Button
   const profileInitial = authUser?.email?.[0]?.toUpperCase() ?? "P";
 
   return (
     <div className="min-h-screen bg-slate-900 flex relative">
-      {/* Haupt-Container */}
       <div className="m-auto w-full max-w-5xl bg-slate-800/80 rounded-2xl shadow-xl border border-slate-700 p-6 md:p-8">
-        {/* Titel */}
         {view.name !== "game" && (
           <div className="flex items-center justify-center mb-4">
             <div className="font-semibold tracking-wide uppercase text-[11px] text-slate-300"></div>
           </div>
         )}
 
-        {/* Haupt-Views */}
         {view.name === "landing" && (
           <LandingPage
             onCreateQuiz={() => setView({ name: "createQuiz" })}
@@ -434,31 +560,23 @@ function App() {
         {view.name === "hostGame" && (
           <HostGamePage
             onBack={() => setView({ name: "landing" })}
-            onLobbyReady={(lobby, selfPlayer) =>
-              setView({ name: "lobby", lobby, selfPlayer })
-            }
+            onLobbyReady={(lobby, selfPlayer) => setView({ name: "lobby", lobby, selfPlayer })}
           />
         )}
         {view.name === "joinGame" && (
           <JoinGamePage
             onBack={() => setView({ name: "landing" })}
-            onLobbyReady={(lobby, selfPlayer) =>
-              setView({ name: "lobby", lobby, selfPlayer })
-            }
+            onLobbyReady={(lobby, selfPlayer) => setView({ name: "lobby", lobby, selfPlayer })}
           />
         )}
         {view.name === "lobby" && (
           <LobbyView
             lobby={view.lobby}
             selfPlayer={view.selfPlayer}
-            onGameStart={(lobby, selfPlayer) =>
-              setView({ name: "game", lobby, selfPlayer })
-            }
+            onGameStart={(lobby, selfPlayer) => setView({ name: "game", lobby, selfPlayer })}
           />
         )}
-        {view.name === "game" && (
-          <GameBoardView lobby={view.lobby} selfPlayer={view.selfPlayer} />
-        )}
+        {view.name === "game" && <GameBoardView lobby={view.lobby} selfPlayer={view.selfPlayer} />}
       </div>
 
       {/* Profil-Button (innen, oben rechts) */}
@@ -510,6 +628,17 @@ function App() {
                   </>
                 ) : (
                   <>
+                    {/* ✅ NEU: Einstellungen */}
+                    <button
+                      onClick={() => {
+                        setShowSettings(true);
+                        setProfileOpen(false);
+                      }}
+                      className="w-full px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-left"
+                    >
+                      Einstellungen
+                    </button>
+
                     <button
                       onClick={() => {
                         setShowStats(true);
@@ -519,10 +648,12 @@ function App() {
                     >
                       Statistiken
                     </button>
+
                     <button
                       onClick={async () => {
                         await supabase.auth.signOut();
                         setShowStats(false);
+                        setShowSettings(false);
                         setAuthModalMode(null);
                         setProfileOpen(false);
                       }}
@@ -540,10 +671,12 @@ function App() {
 
       {/* AUTH-MODAL */}
       {authModalMode && !authUser && (
-        <AuthBox
-          initialMode={authModalMode}
-          onDone={() => setAuthModalMode(null)}
-        />
+        <AuthBox initialMode={authModalMode} onDone={() => setAuthModalMode(null)} />
+      )}
+
+      {/* SETTINGS-MODAL */}
+      {showSettings && authUser && (
+        <SettingsModal userId={authUser.id} onClose={() => setShowSettings(false)} />
       )}
 
       {/* STATISTIK-MODAL */}
