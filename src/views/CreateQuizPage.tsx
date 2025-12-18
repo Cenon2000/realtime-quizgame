@@ -266,7 +266,7 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
   };
 
   return (
-    <div className="flex flex-col gap-4 md:max-h-[80vh]">
+    <div className="flex flex-col gap-4 max-h-[80vh] min-h-0">
       <div className="flex items-center justify-between gap-4">
         <h2 className="text-2xl font-semibold">Quiz erstellen</h2>
         <button
@@ -442,11 +442,11 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
             {loading ? "Speichern..." : enableBoard2 ? "Quiz (2 Boards) speichern" : "Quiz speichern"}
           </button>
 
-          {info && <p className="text-sm text-slate-300">{info}</p>}
+          {info && <p className="text-sm text-slate-300">{info}</p>}  
         </div>
 
         {/* RECHTS: Editor (Board 1 oder Board 2 – immer an gleicher Stelle) */}
-        <div className="flex-[2] md:overflow-y-auto overflow-visible md:max-h-[60vh] border border-slate-700 rounded-xl p-3 space-y-4 bg-slate-900/50">
+        <div className="flex-[2] md:overflow-y-auto overflow-visible md:max-h-[60vh] min-h-0 pb-8 border border-slate-700 rounded-xl p-3 space-y-4 bg-slate-900/50">
           <div className="text-xs text-slate-300 mb-2">
             Du bearbeitest:{" "}
             <span className="font-semibold text-indigo-300">
