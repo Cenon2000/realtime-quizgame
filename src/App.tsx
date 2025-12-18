@@ -453,27 +453,44 @@ function App() {
   useEffect(() => {
   let alive = true;
 
-  const init = async () => {
-    try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) console.warn("getUser error:", error.message);
+  const loadProfileUsername = async (userId: string) => {
+    const { data: profile, error } = await supabase
+      .from("profiles")
+      .select("username")
+      .eq("id", userId)
+      .single();
 
-      const user = data.user ?? null;
+    if (error) {
+      console.warn("profile load error:", error.message);
+      return "";
+    }
+    return profile?.username ?? "";
+  };
+
+  const init = async () => {
+    // ✅ Hard fallback: niemals dauerhaft "Lade..."
+    const safety = window.setTimeout(() => {
+      if (!alive) return;
+      console.warn("Auth init timeout → continue without blocking UI");
+      setAuthUser(null);
+      setProfileUsername("");
+      setAuthLoading(false);
+    }, 2000);
+
+    try {
+      // ✅ getSession ist zuverlässiger als getUser (kommt meist sofort aus localStorage)
+      const { data, error } = await supabase.auth.getSession();
+      if (error) console.warn("getSession error:", error.message);
+
+      const user = data.session?.user ?? null;
       if (!alive) return;
 
       setAuthUser(user);
 
       if (user) {
-        const { data: profile, error: pErr } = await supabase
-          .from("profiles")
-          .select("username")
-          .eq("id", user.id)
-          .single();
-
-        if (pErr) console.warn("profile load error:", pErr.message);
-
+        const uname = await loadProfileUsername(user.id);
         if (!alive) return;
-        setProfileUsername(profile?.username ?? "");
+        setProfileUsername(uname);
       } else {
         setProfileUsername("");
       }
@@ -483,6 +500,7 @@ function App() {
       setAuthUser(null);
       setProfileUsername("");
     } finally {
+      window.clearTimeout(safety);
       if (!alive) return;
       setAuthLoading(false);
     }
@@ -497,16 +515,9 @@ function App() {
     setAuthUser(user);
 
     if (user) {
-      const { data: profile, error: pErr } = await supabase
-        .from("profiles")
-        .select("username")
-        .eq("id", user.id)
-        .single();
-
-      if (pErr) console.warn("profile load error:", pErr.message);
-
+      const uname = await loadProfileUsername(user.id);
       if (!alive) return;
-      setProfileUsername(profile?.username ?? "");
+      setProfileUsername(uname);
     } else {
       setProfileUsername("");
     }
@@ -517,6 +528,7 @@ function App() {
     sub.subscription.unsubscribe();
   };
 }, []);
+
 
 
   if (authLoading) {
