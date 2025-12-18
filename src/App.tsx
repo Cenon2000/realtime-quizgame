@@ -455,7 +455,7 @@ function SettingsModal({
         ) : (
           <>
             <label className="flex flex-col text-xs gap-1">
-              Username
+              Username ändern:
               <input
                 className="px-2 py-1 rounded bg-slate-800 border border-slate-600 text-sm"
                 value={username}
