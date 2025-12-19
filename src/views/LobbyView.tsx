@@ -15,11 +15,18 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
   const isHost = selfPlayer.is_host;
 
   const fetchPlayers = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("lobby_players")
       .select("*")
       .eq("lobby_id", lobby.id)
+      // ✅ NEU: nur verbundene Spieler anzeigen/zählen
+      .eq("is_connected", true)
       .order("turn_order", { ascending: true });
+
+    if (error) {
+      console.warn("fetchPlayers error:", error.message);
+      return;
+    }
 
     if (data) {
       setPlayers(data as LobbyPlayer[]);
@@ -27,29 +34,34 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
   };
 
   const fetchLobby = async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("lobbies")
       .select("*")
       .eq("id", lobby.id)
       .single();
+
+    if (error) {
+      console.warn("fetchLobby error:", error.message);
+      return;
+    }
+
     if (data) setCurrentLobby(data as Lobby);
   };
 
   useEffect(() => {
-    // direkt einmal holen
     fetchPlayers();
     fetchLobby();
 
-    // alle 1–2 Sekunden aktualisieren (funktioniert auch ohne Realtime)
     const interval = setInterval(() => {
       fetchPlayers();
       fetchLobby();
     }, 1500);
 
     return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobby.id]);
 
-  // nur "normale" Spieler zählen (ohne Host)
+  // ✅ nur "normale" UND verbundene Spieler zählen (ohne Host)
   const nonHostPlayers = players.filter((p) => !p.is_host);
   const playersJoined = nonHostPlayers.length;
   const maxPlayers = currentLobby.max_players;
@@ -72,15 +84,11 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
     if (currentLobby.status === "running") {
       onGameStart(currentLobby, selfPlayer);
     }
-  }, [currentLobby.status, onGameStart, selfPlayer]);
+  }, [currentLobby.status, onGameStart, selfPlayer, currentLobby]);
 
-  // optional: manueller Start-Button für Host (falls du das behalten willst)
   const handleStart = async () => {
     if (!isHost) return;
-    await supabase
-      .from("lobbies")
-      .update({ status: "running" })
-      .eq("id", lobby.id);
+    await supabase.from("lobbies").update({ status: "running" }).eq("id", lobby.id);
   };
 
   return (
@@ -96,12 +104,10 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
         </span>
       </p>
 
-      {/* WICHTIG: hier jetzt NUR Spieler ohne Host */}
       <p className="text-sm text-slate-300">
         Spieler: {playersJoined} / {maxPlayers}
       </p>
 
-      {/* Liste zeigt alle – Host und Spieler */}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full md:w-3/4">
         {players.map((p) => (
           <div

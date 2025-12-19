@@ -36,37 +36,63 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
 
       if (lobbyError || !lobby) {
         setInfo("Lobby nicht gefunden.");
-        setLoading(false);
         return;
       }
 
-        const {
-    data: { user },
-  } = await supabase.auth.getUser();
+      // ✅ User holen (kann null sein, wenn nicht eingeloggt)
+      const { data: userData, error: userErr } = await supabase.auth.getUser();
+      if (userErr) console.warn("getUser Fehler:", userErr.message);
+      const user = userData?.user ?? null;
 
+      // ✅ REJOIN: wenn eingeloggt und Player existiert → reconnect statt neu anlegen
+      if (user) {
+        const { data: existing, error: existingErr } = await supabase
+          .from("lobby_players")
+          .select("*")
+          .eq("lobby_id", lobby.id)
+          .eq("user_id", user.id)
+          .single();
 
-      // Spieler in dieser Lobby laden – nur echte Spieler (ohne Host)
+        // Wenn es den Spieler gibt -> reconnect
+        if (!existingErr && existing) {
+          const { data: updated, error: updErr } = await supabase
+            .from("lobby_players")
+            .update({
+              name: name.trim(),
+              is_connected: true,
+              last_seen: new Date().toISOString(),
+            })
+            .eq("id", existing.id)
+            .select()
+            .single();
+
+          if (updErr) throw updErr;
+
+          onLobbyReady(lobby as Lobby, (updated ?? existing) as LobbyPlayer);
+          return;
+        }
+      }
+
+      // Spieler in dieser Lobby laden – nur echte Spieler (ohne Host) UND nur connected
       const { data: players, error: playersError } = await supabase
         .from("lobby_players")
         .select("id, is_host")
         .eq("lobby_id", lobby.id)
-        .eq("is_host", false); // Host NICHT mitzählen
+        .eq("is_host", false)
+        .eq("is_connected", true); // ✅ nur verbundene zählen
 
       if (playersError) {
         console.error(playersError);
         setInfo("Fehler beim Laden der Spieler.");
-        setLoading(false);
         return;
       }
 
-      // Nur Spieler (ohne Host)
       const realPlayers = (players ?? []).filter(
         (p: { id: string; is_host: boolean }) => !p.is_host
       );
 
       if (realPlayers.length >= lobby.max_players) {
         setInfo("Diese Lobby ist bereits voll.");
-        setLoading(false);
         return;
       }
 
@@ -74,18 +100,19 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
       const turnOrder = realPlayers.length;
 
       // Neuen Spieler eintragen
-        const { data: player, error: playerError } = await supabase
-    .from("lobby_players")
-    .insert({
-      lobby_id: lobby.id,
-      name: name.trim(),
-      is_host: false,
-      turn_order: turnOrder,
-      user_id: user?.id ?? null, // 🔥 hier wird der Account verlinkt
-    })
-    .select()
-    .single();
-
+      const { data: player, error: playerError } = await supabase
+        .from("lobby_players")
+        .insert({
+          lobby_id: lobby.id,
+          name: name.trim(),
+          is_host: false,
+          turn_order: turnOrder,
+          user_id: user?.id ?? null, // Account verlinken wenn vorhanden
+          is_connected: true,
+          last_seen: new Date().toISOString(),
+        })
+        .select()
+        .single();
 
       if (playerError || !player) throw playerError;
 
