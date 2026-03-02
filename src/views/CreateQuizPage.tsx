@@ -14,6 +14,19 @@ async function uploadQuestionImage(file: File, quizId: string) {
   return path; // <-- speichern wir in image_path
 }
 
+async function uploadQuestionAudio(file: File, quizId: string) {
+  const ext = file.name.split(".").pop() || "mp3";
+  const fileName = `${crypto.randomUUID()}.${ext}`;
+  const path = `quiz_${quizId}/${fileName}`;
+
+  const { error } = await supabase.storage
+    .from("question-audio")
+    .upload(path, file, { upsert: false });
+
+  if (error) throw error;
+  return path; // <-- speichern wir in audio_path
+}
+
 const DEFAULT_POINTS = [100, 200, 300, 500] as const;
 
 type Props = {
@@ -24,9 +37,11 @@ type QuestionForm = {
   points: number; // ✅ IMMER Basis-Punkte (100/200/300/500) – auch für Board 2!
   question: string;
   answer: string;
-  question_type: "text" | "image";
+  question_type: "text" | "image" | "audio";
   imageFile?: File | null;
   imagePreview?: string | null;
+  audioFile?: File | null;
+  audioPreview?: string | null;
 };
 
 type CategoryForm = {
@@ -44,6 +59,8 @@ function makeEmptyCategories(count: number) {
       question_type: "text" as const,
       imageFile: null,
       imagePreview: null,
+      audioFile: null,
+      audioPreview: null,
     })),
   })).slice(0, count);
 }
@@ -134,7 +151,7 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
   const handleQuestionTypeChange = (
     catIndex: number,
     qIndex: number,
-    value: "text" | "image"
+    value: "text" | "image" | "audio"
   ) => {
     setActiveCategories((prev) => {
       const copy = [...prev];
@@ -144,7 +161,8 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
       qs[qIndex] = {
         ...qs[qIndex],
         question_type: value,
-        ...(value === "text" ? { imageFile: null, imagePreview: null } : {}),
+        ...(value !== "image" ? { imageFile: null, imagePreview: null } : {}),
+        ...(value !== "audio" ? { audioFile: null, audioPreview: null } : {}),
       };
 
       copy[catIndex] = { ...cat, questions: qs };
@@ -164,7 +182,30 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
         ...qs[qIndex],
         imageFile: file,
         imagePreview: preview,
+        audioFile: null,
+        audioPreview: null,
         question_type: "image",
+      };
+
+      copy[catIndex] = { ...cat, questions: qs };
+      return copy;
+    });
+  };
+
+  const handleAudioChange = (catIndex: number, qIndex: number, file: File | null) => {
+    setActiveCategories((prev) => {
+      const copy = [...prev];
+      const cat = copy[catIndex];
+      const qs = [...cat.questions];
+      const preview = file ? URL.createObjectURL(file) : null;
+
+      qs[qIndex] = {
+        ...qs[qIndex],
+        audioFile: file,
+        audioPreview: preview,
+        imageFile: null,
+        imagePreview: null,
+        question_type: "audio",
       };
 
       copy[catIndex] = { ...cat, questions: qs };
@@ -226,12 +267,22 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
               imagePath = await uploadQuestionImage(q.imageFile, quizData.id);
             }
 
+            if (q.question_type === "audio") {
+              if (!q.audioFile) {
+                const shownPts = board === 2 ? q.points * 2 : q.points;
+                throw new Error(
+                  `In Board ${board} / "${catForm.name}" bei ${shownPts} Punkten fehlt eine Audiodatei.`
+                );
+              }
+              imagePath = await uploadQuestionAudio(q.audioFile, quizData.id);
+            }
+
             questionsPayload.push({
               category_id: catData.id,
               points: q.points, // ✅ IMMER Basis-Punkte speichern!
               question:
                 q.question.trim() ||
-                (q.question_type === "image" ? "" : `Frage für ${q.points} Punkte`),
+                (q.question_type === "text" ? `Frage für ${q.points} Punkte` : ""),
               answer: q.answer.trim() || "Antwort",
               question_type: q.question_type,
               image_path: imagePath,
@@ -489,19 +540,20 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
                             handleQuestionTypeChange(
                               catIndex,
                               qIndex,
-                              e.target.value as "text" | "image"
+                              e.target.value as "text" | "image" | "audio"
                             )
                           }
                         >
                           <option value="text">Text</option>
                           <option value="image">Bild</option>
+                          <option value="audio">Audio</option>
                         </select>
                       </div>
 
                       <textarea
                         className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm"
                         placeholder={
-                          q.question_type === "image"
+                          q.question_type !== "text"
                             ? "Optionaler Text (z.B. Welches Land?)"
                             : "Frage"
                         }
@@ -536,6 +588,28 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
                         </div>
                       )}
 
+                      {q.question_type === "audio" && (
+                        <div className="space-y-2">
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="text-xs"
+                            onChange={(e) =>
+                              handleAudioChange(catIndex, qIndex, e.target.files?.[0] ?? null)
+                            }
+                          />
+
+                          {q.audioPreview && (
+                            <audio
+                              controls
+                              preload="metadata"
+                              src={q.audioPreview}
+                              className="w-full"
+                            />
+                          )}
+                        </div>
+                      )}
+
                       <input
                         className="w-full px-2 py-1 rounded bg-slate-900 border border-slate-700 text-sm"
                         placeholder="Antwort"
@@ -555,3 +629,4 @@ function commitCategoryCount(board: 1 | 2, raw: string) {
     </div>
   );
 }
+

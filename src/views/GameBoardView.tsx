@@ -138,6 +138,12 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     return data.publicUrl;
   };
 
+  const getQuestionAudioUrl = (audioPath?: string | null) => {
+    if (!audioPath) return null;
+    const { data } = supabase.storage.from("question-audio").getPublicUrl(audioPath);
+    return data.publicUrl;
+  };
+
   // 1) Quiz, Kategorien, Fragen laden
   useEffect(() => {
     const loadStaticData = async () => {
@@ -697,37 +703,11 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
     await logAnswerEvent(targetPlayer, true, awardedPoints, (currentQuestion as any).id);
 
-    // ✅ Wenn Buzzer beantwortet hat: er ist jetzt dran
-    if (isBuzzerAnswer) {
-      await supabase
-        .from("game_states")
-        .update({
-          current_player_id: targetPlayer.id,
-          current_question_id: null,
-          active_answering_player_id: null,
-          question_status: "idle",
-        })
-        .eq("lobby_id", lobby.id);
-
-      setGameState((prev) =>
-        prev
-          ? ({
-              ...(prev as any),
-              current_player_id: targetPlayer.id,
-              current_question_id: null,
-              active_answering_player_id: null,
-              question_status: "idle",
-            } as any)
-          : prev
-      );
-
-      return;
-    }
-
+    // Reihenfolge bleibt fix: nach jeder aufgeloesten Frage geht es zum naechsten Spieler.
     await goToNextPlayer();
   };
 
-  // ✅ Falsch: Buzzer verschwindet aus Liste, nächster Buzzer oder Frage endet
+  // Falsch beantwortet: aktueller Buzzer raus, dann naechster Buzzer oder Frageende.
   const handleHostWrong = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
 
@@ -780,31 +760,33 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       .eq("question_id", (currentQuestion as any).id)
       .eq("player_id", targetPlayer.id);
 
-    // Keine Buzzers mehr -> Frage endet (Turn bleibt beim letzten Versuch)
+    // Keine Buzzers mehr -> Frage endet, danach normaler Turn-Wechsel.
     if (remaining.length === 0) {
       await markQuestionUsed((currentQuestion as any).id);
 
-      await supabase
+      const { error } = await supabase
         .from("game_states")
         .update({
           current_question_id: null,
           active_answering_player_id: null,
           question_status: "idle",
-          current_player_id: targetPlayer.id,
         })
         .eq("lobby_id", lobby.id);
 
-      setGameState((prev) =>
-        prev
-          ? ({
-              ...(prev as any),
-              current_question_id: null,
-              active_answering_player_id: null,
-              question_status: "idle",
-              current_player_id: targetPlayer.id,
-            } as any)
-          : prev
-      );
+      if (!error) {
+        setGameState((prev) =>
+          prev
+            ? ({
+                ...(prev as any),
+                current_question_id: null,
+                active_answering_player_id: null,
+                question_status: "idle",
+              } as any)
+            : prev
+        );
+      }
+
+      await goToNextPlayer();
 
       return;
     }
@@ -1199,6 +1181,35 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                     />
                   </div>
                 </div>
+              </div>
+            ) : (currentQuestion as any).question_type === "audio" ? (
+              <div className="space-y-3">
+                {!!(currentQuestion as any).question?.trim() && (
+                  <div className="text-lg md:text-2xl font-semibold text-center">
+                    {(currentQuestion as any).question}
+                  </div>
+                )}
+
+                {isHost ? (
+                  <div className="w-full max-w-xl mx-auto rounded-xl border border-slate-700 bg-slate-800/40 p-3">
+                    <div className="text-xs text-slate-300 mb-2">Audio (nur Host steuerbar)</div>
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={
+                        getQuestionAudioUrl(
+                          (currentQuestion as any).audio_path ??
+                            (currentQuestion as any).image_path
+                        ) ?? ""
+                      }
+                      className="w-full"
+                    />
+                  </div>
+                ) : (
+                  <div className="text-sm text-slate-300 text-center border border-slate-700 rounded-lg p-3 bg-slate-800/40">
+                    Audio-Frage: Nur der Host kann die Datei abspielen.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-lg md:text-2xl font-semibold text-center">

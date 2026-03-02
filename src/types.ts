@@ -17,8 +17,9 @@ export type QuizQuestion = {
   points: number;
   question: string;
   answer: string;
-  question_type?: "text" | "image";
+  question_type?: "text" | "image" | "audio";
   image_path?: string | null;
+  audio_path?: string | null;
   board: number; // 1 oder 2
 };
 
