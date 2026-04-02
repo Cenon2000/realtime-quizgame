@@ -8,26 +8,54 @@ type Props = {
   onGameStart: (lobby: Lobby, selfPlayer: LobbyPlayer) => void;
 };
 
+function errorToMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return "Unbekannter Fehler";
+}
+
+function isMissingColumnError(err: unknown): boolean {
+  const message = errorToMessage(err).toLowerCase();
+  return message.includes("column") && message.includes("does not exist");
+}
+
 export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
   const [players, setPlayers] = useState<LobbyPlayer[]>([]);
   const [currentLobby, setCurrentLobby] = useState<Lobby>(lobby);
+  const [info, setInfo] = useState<string | null>(null);
 
   const isHost = selfPlayer.is_host;
 
   const fetchPlayers = async () => {
-    const { data, error } = await supabase
+    const connectedQuery = await supabase
       .from("lobby_players")
       .select("*")
       .eq("lobby_id", lobby.id)
-      // ✅ NEU: nur verbundene Spieler anzeigen/zählen
       .eq("is_connected", true)
       .order("turn_order", { ascending: true });
 
+    let data = connectedQuery.data;
+    let error = connectedQuery.error;
+
+    if (error && isMissingColumnError(error)) {
+      const fallbackQuery = await supabase
+        .from("lobby_players")
+        .select("*")
+        .eq("lobby_id", lobby.id)
+        .order("turn_order", { ascending: true });
+
+      data = fallbackQuery.data;
+      error = fallbackQuery.error;
+    }
+
     if (error) {
-      console.warn("fetchPlayers error:", error.message);
+      setInfo(`Fehler beim Laden der Spieler: ${errorToMessage(error)}`);
       return;
     }
 
+    setInfo(null);
     if (data) {
       setPlayers(data as LobbyPlayer[]);
     }
@@ -41,7 +69,7 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
       .single();
 
     if (error) {
-      console.warn("fetchLobby error:", error.message);
+      setInfo(`Fehler beim Laden der Lobby: ${errorToMessage(error)}`);
       return;
     }
 
@@ -61,25 +89,19 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lobby.id]);
 
-  // ✅ nur "normale" UND verbundene Spieler zählen (ohne Host)
   const nonHostPlayers = players.filter((p) => !p.is_host);
   const playersJoined = nonHostPlayers.length;
   const maxPlayers = currentLobby.max_players;
 
-  // wenn alle Spieler drin sind → Spiel automatisch starten (nur Host macht das)
   useEffect(() => {
     if (!isHost) return;
     if (currentLobby.status !== "waiting") return;
 
     if (playersJoined === maxPlayers && maxPlayers > 0) {
-      supabase
-        .from("lobbies")
-        .update({ status: "running" })
-        .eq("id", currentLobby.id);
+      supabase.from("lobbies").update({ status: "running" }).eq("id", currentLobby.id);
     }
   }, [isHost, playersJoined, maxPlayers, currentLobby]);
 
-  // wenn Lobby-Status auf running geht → in Game wechseln
   useEffect(() => {
     if (currentLobby.status === "running") {
       onGameStart(currentLobby, selfPlayer);
@@ -88,14 +110,18 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
 
   const handleStart = async () => {
     if (!isHost) return;
-    await supabase.from("lobbies").update({ status: "running" }).eq("id", lobby.id);
+    const { error } = await supabase
+      .from("lobbies")
+      .update({ status: "running" })
+      .eq("id", lobby.id);
+    if (error) {
+      setInfo(`Fehler beim Starten: ${errorToMessage(error)}`);
+    }
   };
 
   return (
     <div className="flex flex-col gap-4 items-center">
-      <h2 className="text-2xl font-semibold text-center">
-        Lobby: {currentLobby.name}
-      </h2>
+      <h2 className="text-2xl font-semibold text-center">Lobby: {currentLobby.name}</h2>
 
       <p className="text-sm text-slate-300">
         Beitrittscode:{" "}
@@ -107,6 +133,8 @@ export default function LobbyView({ lobby, selfPlayer, onGameStart }: Props) {
       <p className="text-sm text-slate-300">
         Spieler: {playersJoined} / {maxPlayers}
       </p>
+
+      {info && <p className="text-xs text-rose-300">{info}</p>}
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3 w-full md:w-3/4">
         {players.map((p) => (

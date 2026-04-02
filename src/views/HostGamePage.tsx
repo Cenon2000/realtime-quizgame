@@ -11,30 +11,88 @@ function generateJoinCode() {
   return Math.random().toString(36).substring(2, 7).toUpperCase();
 }
 
-export default function HostGamePage({ onBack, onLobbyReady }: Props) {
-  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
-  const [quizId, setQuizId] = useState<string | null>(null);
-  const [lobbyName, setLobbyName] = useState("");
-  const [maxPlayers, setMaxPlayers] = useState(3); // Anzahl Spieler OHNE Host
-
-  const [maxPlayersInput, setMaxPlayersInput] = useState("3"); // fürs Tippen (mobil)
-
 function clampPlayers(n: number) {
   return Math.min(12, Math.max(1, n));
 }
 
-function commitMaxPlayers(raw: string) {
-  // raw darf kurz leer sein (während man tippt)
-  const n = raw.trim() === "" ? maxPlayers : Number(raw);
-  const clamped = clampPlayers(Number.isFinite(n) ? n : maxPlayers);
-  setMaxPlayers(clamped);
-  setMaxPlayersInput(String(clamped));
+function errorToMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return "Unbekannter Fehler";
 }
 
+function isMissingColumnError(err: unknown): boolean {
+  const message = errorToMessage(err).toLowerCase();
+  return message.includes("column") && message.includes("does not exist");
+}
 
+async function insertInitialGameState(lobbyId: string) {
+  const withBoth = await supabase.from("game_states").insert({
+    lobby_id: lobbyId,
+    current_player_id: null,
+    question_status: "idle",
+    active_answering_player_id: null,
+    current_question_id: null,
+    current_board: 1,
+    board: 1,
+  });
+
+  if (!withBoth.error) return;
+  if (!isMissingColumnError(withBoth.error)) throw withBoth.error;
+
+  const withCurrentBoard = await supabase.from("game_states").insert({
+    lobby_id: lobbyId,
+    current_player_id: null,
+    question_status: "idle",
+    active_answering_player_id: null,
+    current_question_id: null,
+    current_board: 1,
+  });
+
+  if (!withCurrentBoard.error) return;
+  if (!isMissingColumnError(withCurrentBoard.error)) throw withCurrentBoard.error;
+
+  const withLegacyBoard = await supabase.from("game_states").insert({
+    lobby_id: lobbyId,
+    current_player_id: null,
+    question_status: "idle",
+    active_answering_player_id: null,
+    current_question_id: null,
+    board: 1,
+  });
+
+  if (!withLegacyBoard.error) return;
+  if (!isMissingColumnError(withLegacyBoard.error)) throw withLegacyBoard.error;
+
+  const minimal = await supabase.from("game_states").insert({
+    lobby_id: lobbyId,
+    current_player_id: null,
+    question_status: "idle",
+    active_answering_player_id: null,
+    current_question_id: null,
+  });
+
+  if (minimal.error) throw minimal.error;
+}
+
+export default function HostGamePage({ onBack, onLobbyReady }: Props) {
+  const [quizzes, setQuizzes] = useState<Quiz[]>([]);
+  const [quizId, setQuizId] = useState<string | null>(null);
+  const [lobbyName, setLobbyName] = useState("");
+  const [maxPlayers, setMaxPlayers] = useState(3); // Spieler OHNE Host
+  const [maxPlayersInput, setMaxPlayersInput] = useState("3");
   const [hostName, setHostName] = useState("Host");
   const [loading, setLoading] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
+
+  function commitMaxPlayers(raw: string) {
+    const n = raw.trim() === "" ? maxPlayers : Number(raw);
+    const clamped = clampPlayers(Number.isFinite(n) ? n : maxPlayers);
+    setMaxPlayers(clamped);
+    setMaxPlayersInput(String(clamped));
+  }
 
   useEffect(() => {
     supabase
@@ -51,7 +109,7 @@ function commitMaxPlayers(raw: string) {
 
   const handleHost = async () => {
     if (!quizId) {
-      setInfo("Bitte ein Quiz auswählen.");
+      setInfo("Bitte ein Quiz auswaehlen.");
       return;
     }
     if (!lobbyName.trim()) {
@@ -67,7 +125,6 @@ function commitMaxPlayers(raw: string) {
     setInfo(null);
 
     try {
-      // 🔐 aktuell eingeloggten User holen (kann auch null sein, wenn nicht eingeloggt)
       const { data: authData, error: authError } = await supabase.auth.getUser();
       if (authError) {
         console.warn("Konnte aktuellen User nicht ermitteln:", authError.message);
@@ -76,13 +133,12 @@ function commitMaxPlayers(raw: string) {
 
       const joinCode = generateJoinCode();
 
-      // Lobby anlegen
       const { data: lobbyData, error: lobbyError } = await supabase
         .from("lobbies")
         .insert({
           name: lobbyName.trim(),
           quiz_id: quizId,
-          max_players: maxPlayers, // nur Spieler ohne Host
+          max_players: maxPlayers,
           join_code: joinCode,
         })
         .select()
@@ -90,8 +146,7 @@ function commitMaxPlayers(raw: string) {
 
       if (lobbyError || !lobbyData) throw lobbyError;
 
-      // Host als Spieler-Eintrag (is_host = true) + user_id für Statistiken
-      const { data: playerData, error: playerError } = await supabase
+      const fullPlayerInsert = await supabase
         .from("lobby_players")
         .insert({
           lobby_id: lobbyData.id,
@@ -99,28 +154,42 @@ function commitMaxPlayers(raw: string) {
           is_host: true,
           score: 0,
           turn_order: 0,
-          user_id: authUserId, // 🔥 wichtig für answer_logs / game_results
+          user_id: authUserId,
+          is_connected: true,
+          last_seen: new Date().toISOString(),
         })
         .select()
         .single();
 
+      let playerData = (fullPlayerInsert.data as LobbyPlayer | null) ?? null;
+      let playerError: unknown = fullPlayerInsert.error;
+
+      if (playerError && isMissingColumnError(playerError)) {
+        const fallbackPlayerInsert = await supabase
+          .from("lobby_players")
+          .insert({
+            lobby_id: lobbyData.id,
+            name: hostName.trim(),
+            is_host: true,
+            score: 0,
+            turn_order: 0,
+            user_id: authUserId,
+          })
+          .select()
+          .single();
+
+        playerData = (fallbackPlayerInsert.data as LobbyPlayer | null) ?? null;
+        playerError = fallbackPlayerInsert.error;
+      }
+
       if (playerError || !playerData) throw playerError;
 
-      // Game State initialisieren – noch kein Spieler am Zug
-      const { error: gsError } = await supabase.from("game_states").insert({
-        lobby_id: lobbyData.id,
-        current_player_id: null, // erste Runde startet später, wenn Spieler dran sind
-        question_status: "idle",
-        active_answering_player_id: null,
-        current_question_id: null,
-      });
-
-      if (gsError) throw gsError;
+      await insertInitialGameState(lobbyData.id);
 
       onLobbyReady(lobbyData as Lobby, playerData as LobbyPlayer);
     } catch (err) {
       console.error(err);
-      setInfo("Fehler beim Erstellen der Lobby.");
+      setInfo(`Fehler beim Erstellen der Lobby: ${errorToMessage(err)}`);
     } finally {
       setLoading(false);
     }
@@ -134,7 +203,7 @@ function commitMaxPlayers(raw: string) {
           className="px-3 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-sm"
           onClick={onBack}
         >
-          Zurück
+          Zurueck
         </button>
       </div>
 
@@ -150,57 +219,53 @@ function commitMaxPlayers(raw: string) {
           </label>
 
           <label className="flex flex-col gap-1 text-sm">
-  Anzahl Spieler (ohne Host)
+            Anzahl Spieler (ohne Host)
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+                onClick={() => {
+                  const next = clampPlayers(maxPlayers - 1);
+                  setMaxPlayers(next);
+                  setMaxPlayersInput(String(next));
+                }}
+                disabled={maxPlayers <= 1}
+                aria-label="Spieleranzahl verringern"
+                title="Verringern"
+              >
+                -
+              </button>
 
-  <div className="flex items-center gap-2">
-    <button
-      type="button"
-      className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-      onClick={() => {
-        const next = clampPlayers(maxPlayers - 1);
-        setMaxPlayers(next);
-        setMaxPlayersInput(String(next));
-      }}
-      disabled={maxPlayers <= 1}
-      aria-label="Spieleranzahl verringern"
-      title="Verringern"
-    >
-      −
-    </button>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                className="w-24 text-center px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+                value={maxPlayersInput}
+                onChange={(e) => {
+                  const onlyDigits = e.target.value.replace(/[^\d]/g, "");
+                  setMaxPlayersInput(onlyDigits);
+                }}
+                onBlur={() => commitMaxPlayers(maxPlayersInput)}
+                placeholder="1-12"
+              />
 
-    <input
-      // bewusst kein type="number" (mobil fehlen oft die Pfeile / buggy)
-      type="text"
-      inputMode="numeric"
-      pattern="[0-9]*"
-      className="w-24 text-center px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-      value={maxPlayersInput}
-      onChange={(e) => {
-        // nur Ziffern erlauben, aber Leerstring zulassen
-        const onlyDigits = e.target.value.replace(/[^\d]/g, "");
-        setMaxPlayersInput(onlyDigits);
-      }}
-      onBlur={() => commitMaxPlayers(maxPlayersInput)}
-      placeholder="1–12"
-    />
-
-    <button
-      type="button"
-      className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
-      onClick={() => {
-        const next = clampPlayers(maxPlayers + 1);
-        setMaxPlayers(next);
-        setMaxPlayersInput(String(next));
-      }}
-      disabled={maxPlayers >= 12}
-      aria-label="Spieleranzahl erhöhen"
-      title="Erhöhen"
-    >
-      +
-    </button>
-  </div>
-</label>
-
+              <button
+                type="button"
+                className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
+                onClick={() => {
+                  const next = clampPlayers(maxPlayers + 1);
+                  setMaxPlayers(next);
+                  setMaxPlayersInput(String(next));
+                }}
+                disabled={maxPlayers >= 12}
+                aria-label="Spieleranzahl erhoehen"
+                title="Erhoehen"
+              >
+                +
+              </button>
+            </div>
+          </label>
 
           <label className="flex flex-col gap-1 text-sm">
             Dein Name (Host)
@@ -214,7 +279,7 @@ function commitMaxPlayers(raw: string) {
 
         <div className="space-y-3">
           <label className="flex flex-col gap-1 text-sm">
-            Quiz auswählen
+            Quiz auswaehlen
             <select
               className="px-3 py-2 rounded-lg bg-slate-900 border border-slate-700"
               value={quizId ?? ""}

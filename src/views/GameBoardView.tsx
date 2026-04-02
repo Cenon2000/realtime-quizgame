@@ -21,6 +21,19 @@ type QuestionStatusRow = {
   used: boolean;
 };
 
+function errorToMessage(err: unknown): string {
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg;
+  }
+  return "";
+}
+
+function isMissingColumnError(err: unknown): boolean {
+  const message = errorToMessage(err).toLowerCase();
+  return message.includes("column") && message.includes("does not exist");
+}
+
 function CategoryTitle({ name }: { name: string }) {
   const outerRef = useRef<HTMLDivElement | null>(null);
   const innerRef = useRef<HTMLSpanElement | null>(null);
@@ -226,11 +239,20 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       }
 
       // ✅ nur verbundene Spieler laden
-      const { data: playersData } = await supabase
+      const connectedPlayersQuery = await supabase
         .from("lobby_players")
         .select("*")
         .eq("lobby_id", lobby.id)
         .eq("is_connected", true);
+
+      let playersData = connectedPlayersQuery.data;
+      if (connectedPlayersQuery.error && isMissingColumnError(connectedPlayersQuery.error)) {
+        const fallbackPlayersQuery = await supabase
+          .from("lobby_players")
+          .select("*")
+          .eq("lobby_id", lobby.id);
+        playersData = fallbackPlayersQuery.data;
+      }
 
       if (!active) return;
 
@@ -263,11 +285,23 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
         if (buzzData && buzzData.length > 0) {
           const ids = buzzData.map((b) => b.player_id);
-          const { data: buzzPlayers } = await supabase
+          const connectedBuzzPlayersQuery = await supabase
             .from("lobby_players")
             .select("*")
             .in("id", ids)
             .eq("is_connected", true);
+
+          let buzzPlayers = connectedBuzzPlayersQuery.data;
+          if (
+            connectedBuzzPlayersQuery.error &&
+            isMissingColumnError(connectedBuzzPlayersQuery.error)
+          ) {
+            const fallbackBuzzPlayersQuery = await supabase
+              .from("lobby_players")
+              .select("*")
+              .in("id", ids);
+            buzzPlayers = fallbackBuzzPlayersQuery.data;
+          }
 
           if (!active) return;
 
@@ -972,13 +1006,23 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         .eq("player_id", selfPlayer.id);
 
       // ✅ NICHT löschen, sondern disconnecten -> Rejoin möglich, Slot wird frei
-      await supabase
+      const softDisconnect = await supabase
         .from("lobby_players")
         .update({
           is_connected: false,
           last_seen: new Date().toISOString(),
         })
         .eq("id", selfPlayer.id);
+
+      if (softDisconnect.error && isMissingColumnError(softDisconnect.error)) {
+        const fallbackDelete = await supabase
+          .from("lobby_players")
+          .delete()
+          .eq("id", selfPlayer.id);
+        if (fallbackDelete.error) throw fallbackDelete.error;
+      } else if (softDisconnect.error) {
+        throw softDisconnect.error;
+      }
 
       window.location.href = "/";
     } catch (err) {
