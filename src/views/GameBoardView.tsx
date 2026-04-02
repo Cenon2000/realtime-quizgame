@@ -121,6 +121,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
   const [isGameOver, setIsGameOver] = useState(false);
   const [topPlayers, setTopPlayers] = useState<LobbyPlayer[]>([]);
+  const questionTurnOwnerIdRef = useRef<string | null>(null);
 
   const isHost = selfPlayer.is_host;
 
@@ -344,7 +345,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
                 : prev
             );
 
-            await goToNextPlayer();
+            await goToNextPlayer(questionTurnOwnerIdRef.current ?? currentPlayer?.id ?? null);
           }
         } else {
           setBuzzTimeLeft(remaining);
@@ -388,7 +389,21 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
   useEffect(() => {
     setHasBuzzedThisQuestion(false);
     setJustBuzzed(false);
-  }, [(gameState as any)?.current_question_id]);
+
+    const currentQuestionId = (gameState as any)?.current_question_id ?? null;
+    const currentTurnPlayerId = (gameState as any)?.current_player_id ?? null;
+
+    if (!currentQuestionId) {
+      questionTurnOwnerIdRef.current = null;
+      return;
+    }
+
+    // Beim Reload/Reconnect waehrend einer laufenden Frage:
+    // turn owner aus game_state uebernehmen, damit die Reihenfolge stabil bleibt.
+    if (!questionTurnOwnerIdRef.current && currentTurnPlayerId) {
+      questionTurnOwnerIdRef.current = currentTurnPlayerId;
+    }
+  }, [(gameState as any)?.current_question_id, (gameState as any)?.current_player_id]);
 
   // ========= Board-Filter (über quiz_categories.board) =========
 
@@ -556,12 +571,15 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     }
   };
 
-  const goToNextPlayer = async () => {
+  const goToNextPlayer = async (fromPlayerId?: string | null) => {
     if (!gameState) return;
     if (!nonHostPlayersOrdered.length) return;
 
     const currentId =
-      (gameState as any).current_player_id ?? nonHostPlayersOrdered[0].id;
+      fromPlayerId ??
+      questionTurnOwnerIdRef.current ??
+      (gameState as any).current_player_id ??
+      nonHostPlayersOrdered[0].id;
 
     const currentIndex = nonHostPlayersOrdered.findIndex((p) => p.id === currentId);
     const nextIndex =
@@ -579,6 +597,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       .eq("lobby_id", lobby.id);
 
     if (!error) {
+      questionTurnOwnerIdRef.current = null;
       setGameState((prev) =>
         prev
           ? ({
@@ -628,6 +647,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     const currentPlayerId =
       (gameState as any).current_player_id ?? nonHostPlayersOrdered[0]?.id ?? null;
     if (!currentPlayerId) return;
+    questionTurnOwnerIdRef.current = currentPlayerId;
 
     const { error } = await supabase
       .from("game_states")
@@ -673,7 +693,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
     });
   };
 
-  // ✅ Richtig: Buzzer bekommt halbe Punkte, und ist danach dran
+  // ✅ Richtig: Buzzer bekommt halbe Punkte, Reihenfolge bleibt trotzdem fix.
   const handleHostCorrect = async () => {
     if (!isHost || !gameState || !currentQuestion) return;
 
@@ -703,8 +723,8 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
 
     await logAnswerEvent(targetPlayer, true, awardedPoints, (currentQuestion as any).id);
 
-    // Reihenfolge bleibt fix: nach jeder aufgeloesten Frage geht es zum naechsten Spieler.
-    await goToNextPlayer();
+    // Immer vom urspruenglichen Zugspieler weiterschalten - nie vom Buzzer.
+    await goToNextPlayer(questionTurnOwnerIdRef.current ?? currentPlayer?.id ?? null);
   };
 
   // Falsch beantwortet: aktueller Buzzer raus, dann naechster Buzzer oder Frageende.
@@ -786,7 +806,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
         );
       }
 
-      await goToNextPlayer();
+      await goToNextPlayer(questionTurnOwnerIdRef.current ?? currentPlayer?.id ?? null);
 
       return;
     }
@@ -847,7 +867,7 @@ export default function GameBoardView({ lobby, selfPlayer }: Props) {
       );
     }
 
-    await goToNextPlayer();
+    await goToNextPlayer(questionTurnOwnerIdRef.current ?? currentPlayer?.id ?? null);
   };
 
   const handleHostSelectBuzzer = async (player: LobbyPlayer) => {
