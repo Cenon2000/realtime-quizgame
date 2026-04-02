@@ -159,11 +159,29 @@ export default function JoinGamePage({ onBack, onLobbyReady }: Props) {
       const user = userData?.user ?? null;
 
       if (user) {
+        const { data: asHost, error: asHostErr } = await supabase
+          .from("lobby_players")
+          .select("id")
+          .eq("lobby_id", lobby.id)
+          .eq("user_id", user.id)
+          .eq("is_host", true)
+          .limit(1)
+          .maybeSingle();
+
+        if (asHostErr) throw asHostErr;
+        if (asHost) {
+          setInfo(
+            "Du bist in dieser Lobby bereits als Host eingeloggt. Bitte mit anderem Account oder im privaten Fenster beitreten."
+          );
+          return;
+        }
+
         const { data: existing, error: existingErr } = await supabase
           .from("lobby_players")
           .select("*")
           .eq("lobby_id", lobby.id)
           .eq("user_id", user.id)
+          .eq("is_host", false)
           .limit(1)
           .maybeSingle();
 
